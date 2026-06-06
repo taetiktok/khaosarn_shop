@@ -1,0 +1,2 @@
+psycopg2-binary==2.9.9
+cloudinary==1.36.0
