@@ -346,11 +346,17 @@ select.fi{cursor:pointer;}
     <p id="ru-name" style="font-size:13px;color:#555;margin-bottom:14px;"></p>
     <div class="fg">
       <label>รหัสผ่านใหม่</label>
-      <input class="fi" id="ru-pw" type="password" placeholder="อย่างน้อย 6 ตัวอักษร" style="font-size:16px;padding:11px;">
+      <div style="position:relative;">
+        <input class="fi" id="ru-pw" type="password" placeholder="อย่างน้อย 6 ตัวอักษร" style="font-size:16px;padding:11px 44px 11px 11px;width:100%;box-sizing:border-box;">
+        <button onclick="togglePw('ru-pw','ru-eye')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:20px;cursor:pointer;" id="ru-eye">👁</button>
+      </div>
     </div>
     <div class="fg">
       <label>ยืนยันรหัสผ่านใหม่</label>
-      <input class="fi" id="ru-pw2" type="password" placeholder="พิมพ์อีกครั้ง" style="font-size:16px;padding:11px;">
+      <div style="position:relative;">
+        <input class="fi" id="ru-pw2" type="password" placeholder="พิมพ์อีกครั้ง" style="font-size:16px;padding:11px 44px 11px 11px;width:100%;box-sizing:border-box;">
+        <button onclick="togglePw('ru-pw2','ru-eye2')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:20px;cursor:pointer;" id="ru-eye2">👁</button>
+      </div>
     </div>
     <div class="err" id="ru-err"></div>
     <div class="btn-row">
@@ -540,8 +546,8 @@ function _dragStart(cx, cy) {
 function _dragMove(cx, cy) {
   if (!_drag) return;
   // delta px → % ของ element → หาร zoom เพราะ translate อยู่ใน pre-scale space
-  const dtx = -(cx - _drag.cx) / _drag.w * 100 / _imgZoom;
-  const dty = -(cy - _drag.cy) / _drag.h * 100 / _imgZoom;
+  const dtx = (cx - _drag.cx) / _drag.w * 100 / _imgZoom;
+  const dty = (cy - _drag.cy) / _drag.h * 100 / _imgZoom;
   // clamp: ไม่ให้เลื่อนออกไปไกลกว่า (zoom-1)/zoom * 50%
   const cap = (_imgZoom > 1) ? (_imgZoom - 1) / _imgZoom * 50 : 0;
   _imgPanX = Math.max(-cap, Math.min(cap, _drag.px + dtx));
@@ -595,8 +601,8 @@ function _promoDragStart(cx, cy) {
 }
 function _promoDragMove(cx, cy) {
   if (!_promoDrag) return;
-  const dtx = -(cx - _promoDrag.cx) / _promoDrag.w * 100 / _promoZoom;
-  const dty = -(cy - _promoDrag.cy) / _promoDrag.h * 100 / _promoZoom;
+  const dtx = (cx - _promoDrag.cx) / _promoDrag.w * 100 / _promoZoom;
+  const dty = (cy - _promoDrag.cy) / _promoDrag.h * 100 / _promoZoom;
   const cap = (_promoZoom > 1) ? (_promoZoom - 1) / _promoZoom * 50 : 0;
   _promoPanX = Math.max(-cap, Math.min(cap, _promoDrag.px + dtx));
   _promoPanY = Math.max(-cap, Math.min(cap, _promoDrag.py + dty));
@@ -613,6 +619,12 @@ function _promoZoomChange(val) {
 function _promoResetPos() {
   _promoPanX = 0; _promoPanY = 0; _promoZoom = 1;
   _applyPromoPreview();
+}
+function _promoWidthChange(val) {
+  const box = document.getElementById('promo-drag-box');
+  if (box) box.style.maxWidth = val + 'px';
+  const lb = document.getElementById('promo-w-lb');
+  if (lb) lb.textContent = val + 'px';
 }
 const PROMO_SHAPES = {
   square:    { label:'◻️ จัตุรัส',       ratio:'1/1',   maxW:'260px' },
@@ -652,6 +664,7 @@ async function initSettings() {
     applyStoreName();
     applyLogo(storeSettings.cover_photo);
     applyContact();
+    if (products.length) render(); // re-render เพื่อให้ TikTok section โหลดถูกต้อง
     setTimeout(() => { if(typeof fixSearchBarTop==='function') fixSearchBarTop(); }, 200);
     // แสดง promo popup ถ้ามีรูปและยังไม่ได้ปิดในเซสชันนี้
     if (storeSettings.promo_popup && !sessionStorage.getItem('promo_closed')) {
@@ -659,7 +672,7 @@ async function initSettings() {
       const img   = document.getElementById('promo-img');
       const shape = storeSettings.promo_shape || 'square';
       const s     = PROMO_SHAPES[shape] || PROMO_SHAPES.square;
-      box.style.maxWidth    = s.maxW;
+      box.style.maxWidth    = (storeSettings.promo_width ? storeSettings.promo_width + 'px' : s.maxW);
       box.style.aspectRatio = s.ratio;
       const pp = parseImgPos(storeSettings.promo_pos);
       img.src              = storeSettings.promo_popup;
@@ -839,13 +852,119 @@ function render() {
 
   const groups = {};
   filtered.forEach(p => { if (!groups[p.cat]) groups[p.cat] = []; groups[p.cat].push(p); });
-  document.getElementById('main').innerHTML = featuredHtml + Object.entries(groups).map(([cat, items]) => `
+  const tiktokHtml = buildVideoSection();
+  document.getElementById('main').innerHTML = featuredHtml + tiktokHtml + Object.entries(groups).map(([cat, items]) => `
     <div class="sec-title">${CAT_ICON[cat]||'🛒'} ${cat}</div>
     <div class="grid">${items.map(p => `
       ${cardHtml(p, lineId, phone1)}`).join('')}
     </div>`).join('');
   // restore cart button states after re-render
   Object.keys(cart).forEach(id => _updateCartBtn(Number(id)));
+}
+
+// ── VIDEO SECTION (TikTok + YouTube carousel) ─────────────────────────
+async function resolveTikTok(input) {
+  const url = input.value.trim();
+  if (!url || url.includes('/video/')) return;
+  const st = document.getElementById('tiktok-status');
+  if (st) st.textContent = '⏳ กำลังแปลง link...';
+  try {
+    const r = await api('GET', '/api/resolve-tiktok?url=' + encodeURIComponent(url));
+    if (r.ok && r.data.url) {
+      input.value = r.data.url;
+      if (st) st.textContent = '✅ แปลง link สำเร็จ!';
+      setTimeout(() => { if (st) st.textContent = ''; }, 3000);
+    } else {
+      if (st) st.textContent = '❌ ' + (r.data?.error || 'แปลงไม่ได้');
+    }
+  } catch(e) { if (st) st.textContent = '❌ เกิดข้อผิดพลาด'; }
+}
+
+// Resolve TikTok short URLs silently (used at save time)
+async function resolveVideoUrl(url) {
+  if (!url) return url;
+  const isTikTokShort = /tiktok\.com/.test(url) && !url.includes('/video/');
+  if (!isTikTokShort) return url;
+  try {
+    const r = await api('GET', '/api/resolve-tiktok?url=' + encodeURIComponent(url));
+    return (r.ok && r.data.url) ? r.data.url : url;
+  } catch { return url; }
+}
+
+function extractTikTokId(url) {
+  const m = url.match(/video\/(\d+)/);
+  return m ? m[1] : null;
+}
+function extractYouTubeId(url) {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+function detectVideoType(url) {
+  if (!url) return null;
+  if (extractYouTubeId(url)) return 'youtube';
+  if (extractTikTokId(url)) return 'tiktok';
+  return null;
+}
+
+let _videoIdx = 0;
+function videoCarouselGo(idx) {
+  const track = document.getElementById('vc-track');
+  const dots = document.querySelectorAll('.vc-dot');
+  if (!track) return;
+  const total = track.children.length;
+  _videoIdx = ((idx % total) + total) % total;
+  track.style.transform = `translateX(-${_videoIdx * 100}%)`;
+  dots.forEach((d, i) => { d.style.background = i === _videoIdx ? 'var(--accent)' : '#ccc'; });
+}
+function videoCarouselPrev() { videoCarouselGo(_videoIdx - 1); }
+function videoCarouselNext() { videoCarouselGo(_videoIdx + 1); }
+
+function buildVideoSection() {
+  const rawUrls = [
+    storeSettings.tiktok_v1||'',
+    storeSettings.tiktok_v2||'',
+    storeSettings.tiktok_v3||'',
+  ].filter(u => u && detectVideoType(u));
+  if (!rawUrls.length) return '';
+  _videoIdx = 0;
+
+  const slides = rawUrls.map(u => {
+    const type = detectVideoType(u);
+    let inner = '';
+    if (type === 'youtube') {
+      const id = extractYouTubeId(u);
+      inner = `<div style="width:min(480px,calc(100vw-80px));aspect-ratio:16/9;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.15);">
+        <iframe src="https://www.youtube.com/embed/${id}?rel=0" width="100%" height="100%" frameborder="0" allowfullscreen allow="autoplay;encrypted-media" style="display:block;width:100%;height:100%;"></iframe>
+      </div>`;
+    } else {
+      const id = extractTikTokId(u);
+      inner = `<div style="width:280px;height:500px;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.15);">
+        <iframe src="https://www.tiktok.com/embed/v2/${id}" width="280" height="500" frameborder="0" allowfullscreen allow="autoplay" style="display:block;"></iframe>
+      </div>`;
+    }
+    return `<div style="flex:0 0 100%;display:flex;justify-content:center;align-items:center;padding:8px 44px;box-sizing:border-box;">${inner}</div>`;
+  }).join('');
+
+  const dots = rawUrls.length > 1
+    ? `<div style="display:flex;justify-content:center;gap:7px;margin-top:10px;">
+        ${rawUrls.map((_,i) => `<span class="vc-dot" onclick="videoCarouselGo(${i})" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${i===0?'var(--accent)':'#ccc'};cursor:pointer;transition:background .2s;"></span>`).join('')}
+      </div>` : '';
+
+  const arrows = rawUrls.length > 1
+    ? `<button onclick="videoCarouselPrev()" style="position:absolute;left:0;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.92);border:none;border-radius:50%;width:34px;height:34px;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:2;color:#333;">‹</button>
+       <button onclick="videoCarouselNext()" style="position:absolute;right:0;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.92);border:none;border-radius:50%;width:34px;height:34px;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:2;color:#333;">›</button>`
+    : '';
+
+  return `<div style="margin-bottom:16px;">
+    <div class="sec-title">🎵 วีดีโอจากร้านเรา</div>
+    <div style="position:relative;max-width:600px;margin:0 auto;">
+      <div style="overflow:hidden;border-radius:14px;">
+        <div id="vc-track" style="display:flex;transition:transform .35s cubic-bezier(.4,0,.2,1);">${slides}</div>
+      </div>
+      ${arrows}
+      ${dots}
+    </div>
+  </div>`;
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────
@@ -1323,6 +1442,16 @@ async function renderStoreSettings(c) {
         <input class="fi" id="st-ann" value="${s.announcement||''}" placeholder="เช่น วันอาทิตย์นี้ปิดร้าน / ลดราคา 10% ทุกรายการ" style="margin-top:6px;">
         <div style="font-size:12px;color:#e65100;margin-top:4px;">แสดงแถบเหลืองให้ลูกค้าเห็นทุกคน เว้นว่างเพื่อซ่อน</div>
       </div>
+      <div class="fg" style="background:#e8f5e9;border-radius:10px;padding:12px;">
+        <label style="font-size:14px;font-weight:700;">🎵 วีดีโอ TikTok / YouTube (สูงสุด 3 คลิป)</label>
+        <div style="font-size:12px;color:#2e7d32;margin-bottom:10px;">วาง link TikTok หรือ YouTube — จะแสดงเป็น carousel ในหน้าร้าน</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <input class="fi" id="st-tiktok1" value="${s.tiktok_v1||''}" placeholder="คลิปที่ 1 — TikTok หรือ YouTube" onblur="resolveTikTok(this)">
+          <input class="fi" id="st-tiktok2" value="${s.tiktok_v2||''}" placeholder="คลิปที่ 2 — TikTok หรือ YouTube" onblur="resolveTikTok(this)">
+          <input class="fi" id="st-tiktok3" value="${s.tiktok_v3||''}" placeholder="คลิปที่ 3 — TikTok หรือ YouTube" onblur="resolveTikTok(this)">
+        </div>
+        <div id="tiktok-status" style="font-size:12px;color:#2e7d32;margin-top:4px;"></div>
+      </div>
       <div class="fg" style="background:#fce4ec;border-radius:10px;padding:12px;">
         <label style="font-size:14px;font-weight:700;">🎉 รูปโฆษณา Popup</label>
         <div style="font-size:12px;color:#880e4f;margin-bottom:10px;">แสดงเมื่อลูกค้าเปิดเว็บครั้งแรก — เว้นว่างถ้าไม่ต้องการ</div>
@@ -1340,6 +1469,13 @@ async function renderStoreSettings(c) {
           <div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap;">
             ${Object.entries(PROMO_SHAPES||{square:{label:'◻️ จัตุรัส'},portrait:{label:'🖼️ ผืนผ้าตั้ง'},landscape:{label:'🖼️ ผืนผ้านอน'}}).map(([k,v])=>`
             <button type="button" class="btn promo-shape-btn${(s.promo_shape||'square')===k?' active btn-g':' btn-gh'}" data-shape="${k}" style="font-size:12px;padding:6px 12px;" onclick="setPromoShape('${k}')">${v.label}</button>`).join('')}
+          </div>
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="font-size:12px;color:#555;font-weight:600;white-space:nowrap;min-width:60px;">↔️ กว้าง</span>
+              <input type="range" id="promo-w-sl" min="200" max="600" step="10" value="${parseInt(s.promo_width||440)}" style="flex:1;cursor:pointer;" oninput="_promoWidthChange(this.value)">
+              <span id="promo-w-lb" style="font-size:12px;font-weight:700;color:#c2185b;min-width:42px;text-align:right;">${parseInt(s.promo_width||440)}px</span>
+            </div>
           </div>
           <div style="font-size:12px;font-weight:700;color:#555;margin-bottom:5px;">🖐 ลากรูป · เลื่อน Slider ซูม</div>
           <div id="promo-drag-box"
@@ -1410,7 +1546,29 @@ async function saveStoreSettings(myId) {
     promo_popup:  document.getElementById('st-promo')?.value.trim() || '',
     promo_pos:    document.getElementById('promo-pos-hidden')?.value || '0 0 1',
     promo_shape:  document.getElementById('promo-shape-hidden')?.value || 'square',
+    promo_width:  document.getElementById('promo-w-sl')?.value || '440',
+    tiktok_v1:    document.getElementById('st-tiktok1')?.value.trim() || '',
+    tiktok_v2:    document.getElementById('st-tiktok2')?.value.trim() || '',
+    tiktok_v3:    document.getElementById('st-tiktok3')?.value.trim() || '',
   };
+  // resolve TikTok short URLs before saving
+  const stEl = document.getElementById('tiktok-status');
+  if ((body.tiktok_v1 && !detectVideoType(body.tiktok_v1)) ||
+      (body.tiktok_v2 && !detectVideoType(body.tiktok_v2)) ||
+      (body.tiktok_v3 && !detectVideoType(body.tiktok_v3))) {
+    if (stEl) stEl.textContent = '⏳ กำลังแปลง link...';
+    [body.tiktok_v1, body.tiktok_v2, body.tiktok_v3] = await Promise.all([
+      resolveVideoUrl(body.tiktok_v1),
+      resolveVideoUrl(body.tiktok_v2),
+      resolveVideoUrl(body.tiktok_v3),
+    ]);
+    if (stEl) stEl.textContent = '';
+    // update input fields with resolved URLs
+    ['st-tiktok1','st-tiktok2','st-tiktok3'].forEach((id,i) => {
+      const el = document.getElementById(id);
+      if (el) el.value = [body.tiktok_v1, body.tiktok_v2, body.tiktok_v3][i];
+    });
+  }
   const email = document.getElementById('st-email')?.value?.trim();
   const [r1, r2] = await Promise.all([
     api('POST', '/api/settings', body),
@@ -1437,7 +1595,7 @@ async function renderAdminUsers(c) {
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">เพิ่ม User ใหม่</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
         <div class="fg" style="margin:0"><input class="fi" id="nu-user" placeholder="username"></div>
-        <div class="fg" style="margin:0"><input class="fi" id="nu-pw" type="password" placeholder="password (≥6)"></div>
+        <div class="fg" style="margin:0;position:relative;"><input class="fi" id="nu-pw" type="password" placeholder="password (≥6)" style="padding-right:44px;width:100%;box-sizing:border-box;"><button onclick="togglePw('nu-pw','nu-eye')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:18px;cursor:pointer;" id="nu-eye">👁</button></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <select class="fi" id="nu-role" style="width:150px;">
@@ -1469,11 +1627,75 @@ async function addUser() {
   if (password.length < 6) { document.getElementById('nu-err').textContent = 'password ต้องมีอย่างน้อย 6 ตัวอักษร'; return; }
   const r = await api('POST','/api/users',{username,password,role});
   if (r.ok) {
-    toast('✅ เพิ่ม user แล้ว');
+    showCredentialCard(username, password, role);
     renderAdminUsers(document.getElementById('a-content'));
   } else {
     document.getElementById('nu-err').textContent = r.data?.error || 'เกิดข้อผิดพลาด';
   }
+}
+
+function copyCredentials(username, password, url) {
+  const text = `🔐 ข้อมูล Login ร้านข้าวสาร\n🌐 ${url}\n👤 Username: ${username}\n🔑 Password: ${password}`;
+  navigator.clipboard.writeText(text).then(() => toast('📋 คัดลอกแล้ว!')).catch(() => {
+    prompt('คัดลอกข้อความนี้:', text);
+  });
+}
+
+function saveCredentialImg() {
+  const card = document.getElementById('cred-card');
+  if (!card) return;
+  if (!window.html2canvas) {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload = () => _doSaveCredImg(card);
+    document.head.appendChild(s);
+  } else { _doSaveCredImg(card); }
+}
+
+function _doSaveCredImg(card) {
+  html2canvas(card, {scale:2, backgroundColor:'#ffffff', useCORS:true}).then(canvas => {
+    const a = document.createElement('a'); a.download = 'admin-login.png';
+    a.href = canvas.toDataURL('image/png'); a.click();
+    toast('💾 บันทึกรูปแล้ว!');
+  });
+}
+
+function showCredentialCard(username, password, role) {
+  const roleLabel = role === 'superadmin' ? '⭐ Super Admin' : '✏️ Editor';
+  const url = location.origin;
+  const el = document.createElement('div');
+  el.id = 'cred-overlay';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  el.innerHTML = `
+    <div id="cred-card" style="background:#fff;border-radius:20px;padding:28px 32px;max-width:340px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3);font-family:inherit;">
+      <div style="font-size:32px;margin-bottom:8px;">🔐</div>
+      <div style="font-size:17px;font-weight:800;color:#1a6b2f;margin-bottom:4px;">ข้อมูล Login</div>
+      <div style="font-size:12px;color:#888;margin-bottom:20px;">ส่งให้ admin ย่อยเก็บไว้</div>
+      <div style="background:#f5f5f5;border-radius:12px;padding:16px;margin-bottom:16px;text-align:left;">
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;color:#888;font-weight:600;margin-bottom:3px;">🌐 เว็บไซต์</div>
+          <div style="font-size:13px;font-weight:700;color:#333;word-break:break-all;">${url}</div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;color:#888;font-weight:600;margin-bottom:3px;">👤 Username</div>
+          <div style="font-size:16px;font-weight:800;color:#1a6b2f;">${username}</div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;color:#888;font-weight:600;margin-bottom:3px;">🔑 Password</div>
+          <div style="font-size:16px;font-weight:800;color:#c2185b;">${password}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#888;font-weight:600;margin-bottom:3px;">🎭 สิทธิ์</div>
+          <div style="font-size:13px;font-weight:700;color:#555;">${roleLabel}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+        <button onclick="copyCredentials('${username}','${password}','${url}')" style="background:#1976d2;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">📋 คัดลอก</button>
+        <button onclick="saveCredentialImg()" style="background:#c2185b;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">💾 บันทึกรูป</button>
+        <button onclick="document.getElementById('cred-overlay').remove()" style="background:#555;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">✕ ปิด</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
 }
 
 async function delUser(id, name) {
@@ -1531,9 +1753,9 @@ async function renderAudit(c) {
 function renderPwForm(c) {
   c.innerHTML = `
     <div style="font-size:13px;font-weight:700;margin-bottom:10px;">เปลี่ยนรหัสผ่านของตัวเอง</div>
-    <div class="fg"><label>รหัสผ่านเดิม</label><input class="fi" id="pw-old" type="password" placeholder="กรอกรหัสปัจจุบัน"></div>
-    <div class="fg"><label>รหัสผ่านใหม่ (≥6 ตัวอักษร)</label><input class="fi" id="pw-new1" type="password"></div>
-    <div class="fg"><label>ยืนยันรหัสผ่านใหม่</label><input class="fi" id="pw-new2" type="password"></div>
+    <div class="fg"><label>รหัสผ่านเดิม</label><div style="position:relative;"><input class="fi" id="pw-old" type="password" placeholder="กรอกรหัสปัจจุบัน" style="padding-right:44px;width:100%;box-sizing:border-box;"><button onclick="togglePw('pw-old','pw-eye0')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:18px;cursor:pointer;" id="pw-eye0">👁</button></div></div>
+    <div class="fg"><label>รหัสผ่านใหม่ (≥6 ตัวอักษร)</label><div style="position:relative;"><input class="fi" id="pw-new1" type="password" style="padding-right:44px;width:100%;box-sizing:border-box;"><button onclick="togglePw('pw-new1','pw-eye1')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:18px;cursor:pointer;" id="pw-eye1">👁</button></div></div>
+    <div class="fg"><label>ยืนยันรหัสผ่านใหม่</label><div style="position:relative;"><input class="fi" id="pw-new2" type="password" style="padding-right:44px;width:100%;box-sizing:border-box;"><button onclick="togglePw('pw-new2','pw-eye2')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:18px;cursor:pointer;" id="pw-eye2">👁</button></div></div>
     <div class="err" id="pw-err"></div>
     <button class="btn btn-g" style="margin-top:6px;" onclick="changePw()">เปลี่ยนรหัสผ่าน</button>`;
 }
