@@ -858,7 +858,7 @@ function cardHtml(p, lineId, phone1) {
       if (allItems.length === 1) return `<div class="card-img" onclick="openLightbox('${mainImg}')" style="cursor:zoom-in"><img src="${mainImg}" alt="${p.name}" style="object-position:50% 50%;transform:${transform};transform-origin:center;" onerror="this.parentElement.innerHTML='${p.emoji||'🛒'}'"/>${!p.in_stock?'<div class="sold-out-badge">หมด</div>':''}${p.featured?'<div style="position:absolute;top:7px;left:7px;font-size:16px;">⭐</div>':''}${session&&!p.visible?'<div class="hidden-badge">🙈ซ่อน</div>':''}</div>`;
       // multiple images — carousel (element-relative, no ID conflict)
       const allImgs = allImgUrls;
-      return `<div class="card-img" style="overflow:hidden;padding:0;cursor:default;" data-slide-idx="0" onclick="openGallery(this,${JSON.stringify(allImgUrls)})">
+      return `<div class="card-img" style="overflow:hidden;padding:0;cursor:default;" data-slide-idx="0" onclick="openGallery(this,${JSON.stringify(allImgUrls).replace(/"/g,'&quot;')})">
         <!-- slide track -->
         <div data-track style="position:absolute;inset:0;display:flex;transition:transform .28s ease;will-change:transform;">
           ${allItems.map((item,i)=>{ const t=item.isMain?transform:(()=>{const pp=_parsePos(item.pos||'0 0 1');return imgTransform(pp[0],pp[1],pp[2]);})(); return `<div style="flex:0 0 100%;height:100%;overflow:hidden;"><img src="${item.url}" style="width:100%;height:100%;object-fit:cover;transform:${t};transform-origin:center;" onerror="this.style.opacity='.2'"></div>`; }).join('')}
