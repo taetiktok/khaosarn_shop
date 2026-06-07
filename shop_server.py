@@ -147,11 +147,17 @@ def _init_pg():
             "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)",
             "CREATE TABLE IF NOT EXISTS reset_tokens(token TEXT PRIMARY KEY,user_id INTEGER NOT NULL,expires_at TEXT NOT NULL)",
         ]: db.execute(s)
-        # migration: add cost_price if not exists
-        try: db.execute("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0")
-        except: pass
-        try: db.execute("ALTER TABLE products ADD COLUMN extra_images TEXT DEFAULT '[]'")
-        except: pass
+        # migration: add columns if not exists (each in its own transaction to avoid aborted-txn state)
+        for col_sql in [
+            "ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0",
+            "ALTER TABLE products ADD COLUMN extra_images TEXT DEFAULT '[]'",
+        ]:
+            try:
+                db.execute(col_sql)
+                db.commit()
+            except Exception:
+                try: db.rollback()
+                except Exception: pass
         db.commit()
         _seed_if_empty(db)
 
