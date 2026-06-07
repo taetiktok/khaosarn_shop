@@ -906,17 +906,34 @@ function _setExtraImgs(arr) {
 function _renderExtraThumbs(imgs) {
   const wrap = document.getElementById('pf-extra-imgs');
   if (!wrap) return;
-  wrap.innerHTML = imgs.length ? imgs.map((url,i) => `
+  wrap.innerHTML = imgs.length ? imgs.map((item,i) => {
+    const url = _extraUrl(item);
+    const pos = _extraPos(item);
+    const allUrls = imgs.map(_extraUrl);
+    const total = imgs.length;
+    return `
     <div style="position:relative;width:80px;border-radius:8px;border:1.5px solid #ddd;overflow:hidden;background:#f9f9f9;">
-      <div style="width:80px;height:80px;overflow:hidden;cursor:pointer;" onclick="openImgGallery(${JSON.stringify(imgs).replace(/"/g,'&quot;')},${i})">
-        <img src="${url}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.opacity='.3'">
+      <div style="width:80px;height:80px;overflow:hidden;cursor:pointer;position:relative;" onclick="openImgGallery(${JSON.stringify(allUrls).replace(/"/g,'&quot;')},${i})">
+        <img src="${url}" style="width:100%;height:100%;object-fit:cover;transform:${imgTransform(..._parsePos(pos))};transform-origin:center;" onerror="this.style.opacity='.3'">
+        <div style="position:absolute;top:2px;left:2px;background:rgba(0,0,0,.5);color:#fff;font-size:9px;border-radius:3px;padding:1px 4px;">${i+1}/${total}</div>
       </div>
       <div style="display:flex;gap:2px;padding:3px;">
-        <button type="button" onclick="_editExtraImg(${i})" style="flex:1;background:#e8f5e9;border:none;border-radius:4px;font-size:10px;padding:2px 0;cursor:pointer;font-weight:700;color:#2e7d32;">✏️</button>
-        <button type="button" onclick="_removeExtraImg(${i})" style="flex:1;background:#fdecea;border:none;border-radius:4px;font-size:10px;padding:2px 0;cursor:pointer;font-weight:700;color:#c62828;">🗑️</button>
+        <button type="button" onclick="event.stopPropagation();_moveExtraImg(${i},-1)" ${i===0?'disabled':''} style="flex:1;background:${i===0?'#f0f0f0':'#e3f2fd'};border:none;border-radius:4px;font-size:11px;padding:2px 0;cursor:${i===0?'default':'pointer'};color:${i===0?'#bbb':'#1565c0'};">◀</button>
+        <button type="button" onclick="event.stopPropagation();_editExtraImg(${i})" style="flex:1;background:#e8f5e9;border:none;border-radius:4px;font-size:11px;padding:2px 0;cursor:pointer;color:#2e7d32;">✏️</button>
+        <button type="button" onclick="event.stopPropagation();_removeExtraImg(${i})" style="flex:1;background:#fdecea;border:none;border-radius:4px;font-size:11px;padding:2px 0;cursor:pointer;color:#c62828;">🗑️</button>
+        <button type="button" onclick="event.stopPropagation();_moveExtraImg(${i},1)" ${i===total-1?'disabled':''} style="flex:1;background:${i===total-1?'#f0f0f0':'#e3f2fd'};border:none;border-radius:4px;font-size:11px;padding:2px 0;cursor:${i===total-1?'default':'pointer'};color:${i===total-1?'#bbb':'#1565c0'};">▶</button>
       </div>
-    </div>`).join('') : '<div style="font-size:12px;color:#bbb;padding:4px 0;">ยังไม่มีรูปเพิ่มเติม</div>';
+    </div>`; }).join('') : '<div style="font-size:12px;color:#bbb;padding:4px 0;">ยังไม่มีรูปเพิ่มเติม</div>';
 }
+
+function _moveExtraImg(i, dir) {
+  const imgs = _getExtraImgs();
+  const j = i + dir;
+  if (j < 0 || j >= imgs.length) return;
+  [imgs[i], imgs[j]] = [imgs[j], imgs[i]];
+  _setExtraImgs(imgs);
+}
+
 
 function _editExtraImg(i) {
   const imgs = _getExtraImgs();
@@ -927,7 +944,11 @@ function _editExtraImg(i) {
   ov.innerHTML = `
     <div style="background:#fff;border-radius:14px;padding:18px;max-width:340px;width:92%;box-shadow:0 8px 40px rgba(0,0,0,.4);">
       <div style="font-weight:700;margin-bottom:10px;">✏️ แก้ไขรูปเพิ่มเติม ${i+1}</div>
-      <div style="font-size:12px;color:#888;margin-bottom:8px;">🖐 ลากรูปเพื่อจัดตำแหน่ง · Slider ซูม</div>
+      <div style="font-size:12px;color:#888;margin-bottom:6px;">🖐 ลากรูปเพื่อจัดตำแหน่ง · Slider ซูม</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <input id="exi-new-url" type="url" placeholder="URL รูปใหม่..." style="flex:1;padding:6px 8px;border:1.5px solid #ddd;border-radius:6px;font-size:12px;" oninput="_exiPreviewUrl(this.value)">
+        <label style="background:#1a6b2f;color:#fff;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap;">📁 อัพ<input type="file" accept="image/*" style="display:none" onchange="addExtraImgReplace(this,${i})"></label>
+      </div>
       <div id="exi-box" style="position:relative;overflow:hidden;border-radius:10px;width:100%;aspect-ratio:1;cursor:grab;border:2px dashed #1a6b2f;background:#f5efe3;touch-action:none;user-select:none;"
         onmousedown="event.preventDefault();_exiDragStart(event.clientX,event.clientY)"
         ontouchstart="event.preventDefault();_exiDragStart(event.touches[0].clientX,event.touches[0].clientY)">
@@ -987,16 +1008,33 @@ function _exiReset() {
   _exiApply();
 }
 function _exiSave(i) {
-  // store pos as "px py zoom" in extra_images as object {url, pos}
   const imgs = _getExtraImgs();
-  if (typeof imgs[i] === 'string') {
-    imgs[i] = { url: imgs[i], pos: fmtImgPos(_exiState.px, _exiState.py, _exiState.zoom) };
-  } else {
-    imgs[i].pos = fmtImgPos(_exiState.px, _exiState.py, _exiState.zoom);
-  }
+  const newUrl = document.getElementById('exi-new-url')?.value?.trim();
+  const baseUrl = newUrl || _extraUrl(imgs[i]);
+  imgs[i] = { url: baseUrl, pos: fmtImgPos(_exiState.px, _exiState.py, _exiState.zoom) };
   _setExtraImgs(imgs);
   document.getElementById('exi-ov')?.remove();
-  toast('✅ บันทึกตำแหน่งรูปแล้ว');
+  toast('✅ บันทึกรูปแล้ว');
+}
+function _exiPreviewUrl(url) {
+  if (!url) return;
+  const img = document.getElementById('exi-img');
+  if (img) { img.src = url; }
+}
+async function addExtraImgReplace(input, i) {
+  if (!input.files[0]) return;
+  toast('⏳ กำลังอัพโหลด...');
+  const url = await doUpload(input.files[0]);
+  if (!url) { toast('❌ อัพไม่ได้'); return; }
+  const img = document.getElementById('exi-img');
+  if (img) img.src = url;
+  const urlInput = document.getElementById('exi-new-url');
+  if (urlInput) urlInput.value = url;
+  _exiState.px = 0; _exiState.py = 0; _exiState.zoom = 1;
+  const sl = document.getElementById('exi-zoom'); if(sl) sl.value=100;
+  const lb = document.getElementById('exi-zoom-lb'); if(lb) lb.textContent='100%';
+  _exiApply();
+  toast('✅ อัพโหลดแล้ว กด บันทึก เพื่อยืนยัน');
 }
 function _removeExtraImg(i) {
   const arr = _getExtraImgs(); arr.splice(i, 1); _setExtraImgs(arr);
