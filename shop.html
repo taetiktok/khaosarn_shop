@@ -1477,6 +1477,7 @@ function openAddProduct() {
   document.getElementById('pf-del').style.display = 'none';
   document.getElementById('pf-err').textContent = '';
   document.getElementById('pf-body').innerHTML = pfFields();
+  _renderExtraThumbs([]);
   open_('ov-pform');
 }
 
@@ -1489,6 +1490,7 @@ function openEditProduct(id) {
   document.getElementById('pf-del').style.display = isSA ? 'inline-flex' : 'none';
   document.getElementById('pf-err').textContent = '';
   document.getElementById('pf-body').innerHTML = pfFields(p, false);
+  try { _renderExtraThumbs(JSON.parse(p.extra_images || '[]')); } catch(e) { _renderExtraThumbs([]); }
   open_('ov-pform');
 }
 
