@@ -98,6 +98,16 @@ select.fi{cursor:pointer;}
 .ib{width:28px;height:28px;border-radius:6px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
 .ib-e{background:#e8f5e9;} .ib-d{background:#fdecea;}
 .ib-tog{width:auto;min-width:58px;padding:0 7px;font-size:11px;font-weight:700;}
+/* promo resize handles */
+.prh{position:absolute;background:rgba(194,24,91,.75);border:1.5px solid #fff;border-radius:3px;z-index:10;touch-action:none;user-select:none;}
+.prh-r {right:-1px;top:50%;transform:translateY(-50%);width:9px;height:36px;cursor:e-resize;border-radius:4px 0 0 4px;}
+.prh-l {left:-1px;top:50%;transform:translateY(-50%);width:9px;height:36px;cursor:w-resize;border-radius:0 4px 4px 0;}
+.prh-t {top:-1px;left:50%;transform:translateX(-50%);width:36px;height:9px;cursor:n-resize;border-radius:0 0 4px 4px;}
+.prh-b {bottom:-1px;left:50%;transform:translateX(-50%);width:36px;height:9px;cursor:s-resize;border-radius:4px 4px 0 0;}
+.prh-br{right:-1px;bottom:-1px;width:14px;height:14px;cursor:se-resize;border-radius:4px 0 0 0;}
+.prh-bl{left:-1px;bottom:-1px;width:14px;height:14px;cursor:sw-resize;border-radius:0 4px 0 0;}
+.prh-tr{right:-1px;top:-1px;width:14px;height:14px;cursor:ne-resize;border-radius:0 0 0 4px;}
+.prh-tl{left:-1px;top:-1px;width:14px;height:14px;cursor:nw-resize;border-radius:0 0 4px 0;}
 
 /* audit log */
 .alog{font-size:11px;}
@@ -629,16 +639,17 @@ function _promoWidthChange(val) {
   if (lb) lb.textContent = val + 'px';
 }
 const PROMO_SHAPES = {
-  square:    { label:'◻️ จัตุรัส',       ratio:'1/1',   maxW:'260px' },
-  portrait:  { label:'🖼️ ผืนผ้าตั้ง',   ratio:'3/4',   maxW:'220px' },
-  landscape: { label:'🖼️ ผืนผ้านอน',   ratio:'4/3',   maxW:'300px' },
+  square:    { label:'◻️ จัตุรัส',       h:260, maxW:'260px' },
+  portrait:  { label:'🖼️ ผืนผ้าตั้ง',   h:293, maxW:'220px' },
+  landscape: { label:'🖼️ ผืนผ้านอน',   h:225, maxW:'300px' },
 };
 function setPromoShape(shape) {
   const box = document.getElementById('promo-drag-box');
   if (!box) return;
   const s = PROMO_SHAPES[shape] || PROMO_SHAPES.square;
-  box.style.aspectRatio = s.ratio;
-  box.style.maxWidth    = s.maxW;
+  box.style.height    = s.h + 'px';
+  box.style.maxWidth  = s.maxW;
+  box.style.aspectRatio = '';
   document.querySelectorAll('.promo-shape-btn').forEach(b => {
     const on = b.dataset.shape === shape;
     b.classList.toggle('active', on);
@@ -646,17 +657,53 @@ function setPromoShape(shape) {
     b.classList.toggle('btn-gh', !on);
   });
   document.getElementById('promo-shape-hidden').value = shape;
+  const lb = document.getElementById('promo-h-lb'); if (lb) lb.textContent = s.h + 'px';
+}
+
+// ── PROMO RESIZE ──────────────────────────────────────────────────────
+let _promoResize = null;
+function _promoResizeStart(e, dir) {
+  e.stopPropagation(); e.preventDefault();
+  const box = document.getElementById('promo-drag-box');
+  if (!box) return;
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  _promoResize = { cx, cy, w: box.offsetWidth, h: box.offsetHeight, dir };
+}
+function _promoResizeMove(cx, cy) {
+  if (!_promoResize) return;
+  const box = document.getElementById('promo-drag-box');
+  if (!box) return;
+  const { dir } = _promoResize;
+  // width: e, w, and all corners
+  if (['e','w','ne','nw','se','sw'].includes(dir)) {
+    const sign = (dir === 'w' || dir === 'nw' || dir === 'sw') ? -1 : 1;
+    const nw = Math.max(150, Math.min(600, _promoResize.w + sign * (cx - _promoResize.cx)));
+    box.style.maxWidth = nw + 'px';
+    const sl = document.getElementById('promo-w-sl'); if (sl) sl.value = nw;
+    const lb = document.getElementById('promo-w-lb'); if (lb) lb.textContent = Math.round(nw) + 'px';
+  }
+  // height: n, s, and all corners
+  if (['n','s','ne','nw','se','sw'].includes(dir)) {
+    const sign = (dir === 'n' || dir === 'ne' || dir === 'nw') ? -1 : 1;
+    const nh = Math.max(100, Math.min(800, _promoResize.h + sign * (cy - _promoResize.cy)));
+    box.style.height = nh + 'px';
+    const lb = document.getElementById('promo-h-lb'); if (lb) lb.textContent = Math.round(nh) + 'px';
+  }
 }
 
 document.addEventListener('mousemove', e => {
-  if (_drag)      _dragMove(e.clientX, e.clientY);
-  if (_promoDrag) _promoDragMove(e.clientX, e.clientY);
+  if (_drag)        _dragMove(e.clientX, e.clientY);
+  if (_promoDrag)   _promoDragMove(e.clientX, e.clientY);
+  if (_promoResize) _promoResizeMove(e.clientX, e.clientY);
 });
-document.addEventListener('mouseup', () => { _dragEnd(); _promoDragEnd(); });
+document.addEventListener('mouseup', () => { _dragEnd(); _promoDragEnd(); _promoResize = null; });
 document.addEventListener('touchmove', e => {
-  if (_drag)      { e.preventDefault(); _dragMove(e.touches[0].clientX, e.touches[0].clientY); }
-  if (_promoDrag) { e.preventDefault(); _promoDragMove(e.touches[0].clientX, e.touches[0].clientY); }
+  if (_drag)        { e.preventDefault(); _dragMove(e.touches[0].clientX, e.touches[0].clientY); }
+  if (_promoDrag)   { e.preventDefault(); _promoDragMove(e.touches[0].clientX, e.touches[0].clientY); }
+  if (_promoResize) { e.preventDefault(); _promoResizeMove(e.touches[0].clientX, e.touches[0].clientY); }
 }, {passive:false});
+document.addEventListener('touchend', () => { _promoResize = null; });
 document.addEventListener('touchend', () => { _dragEnd(); _promoDragEnd(); });
 
 async function initSettings() {
@@ -674,8 +721,9 @@ async function initSettings() {
       const img   = document.getElementById('promo-img');
       const shape = storeSettings.promo_shape || 'square';
       const s     = PROMO_SHAPES[shape] || PROMO_SHAPES.square;
-      box.style.maxWidth    = (storeSettings.promo_width ? storeSettings.promo_width + 'px' : s.maxW);
-      box.style.aspectRatio = s.ratio;
+      box.style.maxWidth    = (storeSettings.promo_width  ? storeSettings.promo_width  + 'px' : s.maxW);
+      box.style.height      = (storeSettings.promo_height ? storeSettings.promo_height + 'px' : s.h + 'px');
+      box.style.aspectRatio = '';
       const pp = parseImgPos(storeSettings.promo_pos);
       img.src              = storeSettings.promo_popup;
       img.style.transform  = imgTransform(pp.px, pp.py, pp.zoom);
@@ -935,7 +983,19 @@ function initVideoCarousel() {
   });
 }
 
+function _toggleVideoHidden() {
+  storeSettings.video_hidden = !storeSettings.video_hidden;
+  const btn = document.getElementById('video-hide-btn');
+  if (btn) {
+    btn.textContent = storeSettings.video_hidden ? '🙈 ซ่อนอยู่' : '👁️ แสดงอยู่';
+    btn.style.background = storeSettings.video_hidden ? '#fdecea' : '#e8f5e9';
+    btn.style.color = storeSettings.video_hidden ? '#c62828' : '#1a6b2f';
+  }
+  render();
+}
+
 function buildVideoSection() {
+  if (storeSettings.video_hidden) return '';
   const rawUrls = [
     storeSettings.tiktok_v1||'',
     storeSettings.tiktok_v2||'',
@@ -1100,7 +1160,12 @@ async function renderAdminProducts(c) {
   c.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
       <button class="btn btn-g" style="font-size:12px;" onclick="openAddProduct()">➕ เพิ่มสินค้าใหม่</button>
-      <button class="btn btn-gh" style="font-size:12px;" onclick="printPriceList()">🖨️ พิมพ์ราคา</button>
+      <button class="btn btn-gh" style="font-size:12px;" onclick="printPriceList()">🖨️ พิมพ์ (ลูกค้า)</button>
+      <button class="btn btn-gh" style="font-size:12px;background:#fce4ec;color:#c62828;border-color:#f48fb1;" onclick="printCostList()">🔒 พิมพ์ (เจ้าของ)</button>
+      <button class="btn btn-gh" style="font-size:12px;background:#e3f2fd;color:#0d47a1;border-color:#90caf9;" onclick="downloadExcel()">📊 Excel (ลูกค้า)</button>
+      <button class="btn btn-gh" style="font-size:12px;background:#f3e5f5;color:#6a1b9a;border-color:#ce93d8;" onclick="downloadExcelCost()">🔒 Excel (เจ้าของ)</button>
+      <button class="btn btn-gh" style="font-size:12px;background:#e8f5e9;color:#1b5e20;border-color:#a5d6a7;" onclick="downloadImportTemplate()">📋 Template</button>
+      <button class="btn btn-gh" style="font-size:12px;background:#fff3e0;color:#e65100;border-color:#ffcc80;" onclick="openImportExcel()">📥 นำเข้า Excel</button>
       <button class="btn" style="font-size:12px;background:#e8f5e9;color:#1a6b2f;border:1.5px solid #2d9e4f;" onclick="resetAllStock()">✅ เปิดขายทั้งหมด</button>
       <button class="btn" style="font-size:12px;background:#fff8e1;color:#f57f17;border:1.5px solid #fbc02d;" onclick="resetAllVisible()">👁️ แสดงทั้งหมด</button>
     </div>
@@ -1158,6 +1223,11 @@ function pfFields(p={}, editorOnly=false) {
     </div>
     <div class="fg"><label>ราคาปลีก (บาท) *</label>
       <input class="fi" id="pf-price" type="number" value="${p.price||''}"></div>
+    <div class="fg" style="background:#fce4ec;border-radius:8px;padding:10px;">
+      <label style="font-weight:700;">🔒 ต้นทุน (บาท) — ไม่แสดงให้ลูกค้าเห็น</label>
+      <input class="fi" id="pf-cost" type="number" min="0" step="0.01" value="${p.cost_price||0}" style="margin-top:6px;">
+      <div style="font-size:11px;color:#c62828;margin-top:4px;">ข้อมูลนี้จะปรากฏเฉพาะในรายงานของเจ้าของร้านเท่านั้น</div>
+    </div>
     <div class="fg"><label>หน่วย</label>
       <input class="fi" id="pf-unit" value="${p.unit||''}" ${ro?'readonly style="background:#f5f5f5"':''}></div>
     <div class="fg" style="background:#e8f4fd;border-radius:8px;padding:10px;">
@@ -1262,8 +1332,9 @@ async function saveProduct() {
     emoji:    document.getElementById('pf-emoji').value.trim() || '🛒',
     img_url:    document.getElementById('pf-img').value.trim(),
     img_pos:    document.getElementById('pf-img-pos')?.value || '50% 50%',
-    price_bulk: parseFloat(document.getElementById('pf-bprice')?.value) || 0,
-    bulk_qty:   parseInt(document.getElementById('pf-bqty')?.value)    || 0,
+    price_bulk:  parseFloat(document.getElementById('pf-bprice')?.value) || 0,
+    bulk_qty:    parseInt(document.getElementById('pf-bqty')?.value)    || 0,
+    cost_price:  parseFloat(document.getElementById('pf-cost')?.value)  || 0,
   };
   const r = editPid
     ? await api('PUT', `/api/products/${editPid}`, body)
@@ -1326,6 +1397,287 @@ function printPriceList() {
     <script>window.print();<\/script>
   </body></html>`);
   w.document.close();
+}
+
+function printCostList() {
+  const c = getContact();
+  const bycat = {};
+  products.forEach(p => { if(!bycat[p.cat]) bycat[p.cat]=[]; bycat[p.cat].push(p); });
+  let totalCost=0, totalRevenue=0;
+  const rows = Object.entries(bycat).map(([cat,items])=>`
+    <tr><td colspan="5" style="background:#880e4f;color:#fff;font-weight:800;padding:6px 10px;font-size:13px;">${CAT_ICON[cat]||'🛒'} ${cat}</td></tr>
+    ${items.map(p=>{
+      const cost = Number(p.cost_price||0);
+      const price = Number(p.price||0);
+      const profit = price - cost;
+      const pct = cost>0 ? ((profit/cost)*100).toFixed(0) : '—';
+      totalCost += cost; totalRevenue += price;
+      return `<tr>
+        <td style="padding:5px 10px;">${p.emoji||''} ${p.name}</td>
+        <td style="padding:5px 10px;color:#555;font-size:11px;">${p.desc_text||''} (${p.unit||'ชิ้น'})</td>
+        <td style="padding:5px 10px;text-align:right;color:#880e4f;font-weight:700;">${cost>0?'฿'+cost.toLocaleString():'—'}</td>
+        <td style="padding:5px 10px;text-align:right;font-weight:700;color:#1a6b2f;">฿${price.toLocaleString()}</td>
+        <td style="padding:5px 10px;text-align:right;font-weight:800;color:${profit>=0?'#1565c0':'#c62828'};">${cost>0?(profit>=0?'+':'')+profit.toLocaleString()+' ('+pct+'%)':'—'}</td>
+      </tr>${!p.in_stock?`<tr><td colspan="5" style="color:#e74c3c;font-size:10px;padding:0 10px 3px;">  ⚠️ สินค้าหมดชั่วคราว</td></tr>`:''}`
+    }).join('')}
+  `).join('');
+  const w = window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>รายงานต้นทุน — เจ้าของร้านเท่านั้น</title>
+    <style>
+      body{font-family:'Sarabun',sans-serif;margin:20px;}
+      h1{color:#880e4f;margin-bottom:2px;}
+      .sub{color:#666;font-size:12px;margin-bottom:16px;}
+      .secret{background:#fce4ec;color:#880e4f;font-size:11px;font-weight:700;padding:6px 12px;border-radius:6px;display:inline-block;margin-bottom:12px;}
+      table{width:100%;border-collapse:collapse;font-size:12px;}
+      tr:nth-child(even){background:#fdf5f9;}
+      td,th{border-bottom:1px solid #f8bbd0;}
+      th{background:#fce4ec;padding:6px 10px;text-align:left;font-weight:700;}
+      .summary{margin-top:16px;background:#fce4ec;padding:10px 14px;border-radius:8px;font-size:13px;}
+      @media print{body{margin:8px;}.secret{display:none;}}
+    </style>
+  </head><body>
+    <h1>🔒 รายงานต้นทุน — ร้านข้าวสาร คลองขวาง</h1>
+    <div class="sub">พิมพ์วันที่ ${new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})}</div>
+    <div class="secret">⚠️ เอกสารนี้มีข้อมูลต้นทุน — สำหรับเจ้าของร้านเท่านั้น ห้ามแสดงลูกค้า</div>
+    <table><thead><tr>
+      <th>สินค้า</th><th>รายละเอียด</th>
+      <th style="text-align:right;">ต้นทุน</th>
+      <th style="text-align:right;">ราคาขาย</th>
+      <th style="text-align:right;">กำไร</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div class="summary">
+      📊 สรุป: สินค้าทั้งหมด <b>${products.length} รายการ</b> &nbsp;|&nbsp;
+      รายได้รวม <b style="color:#1a6b2f;">฿${totalRevenue.toLocaleString()}</b> &nbsp;|&nbsp;
+      ต้นทุนรวม <b style="color:#880e4f;">฿${totalCost.toLocaleString()}</b> &nbsp;|&nbsp;
+      กำไรรวม <b style="color:#1565c0;">฿${(totalRevenue-totalCost).toLocaleString()}</b>
+    </div>
+    <script>window.print();<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+function _loadXLSX(cb) {
+  if (window.XLSX) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+
+function downloadExcel() {
+  _loadXLSX(() => {
+    const wb = XLSX.utils.book_new();
+    const bycat = {};
+    products.forEach(p => { if (!bycat[p.cat]) bycat[p.cat]=[]; bycat[p.cat].push(p); });
+    const rows = [['สินค้า','หมวดหมู่','รายละเอียด','หน่วย','ราคาปลีก (฿)','ราคาส่ง (฿)','จำนวนขั้นต่ำส่ง','มีสินค้า']];
+    Object.entries(bycat).forEach(([cat,items]) => {
+      items.forEach(p => rows.push([
+        (p.emoji||'') + ' ' + p.name,
+        cat,
+        p.desc_text||'',
+        p.unit||'ชิ้น',
+        Number(p.price||0),
+        p.price_bulk>0 ? Number(p.price_bulk) : '',
+        p.bulk_qty>0 ? Number(p.bulk_qty) : '',
+        p.in_stock ? 'มี' : 'หมด'
+      ]));
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:28},{wch:14},{wch:24},{wch:10},{wch:14},{wch:14},{wch:16},{wch:10}];
+    // style header row bold (basic)
+    XLSX.utils.book_append_sheet(wb, ws, 'ราคาสินค้า');
+    const d = new Date().toLocaleDateString('th-TH',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\//g,'-');
+    XLSX.writeFile(wb, `ราคาสินค้า_${d}.xlsx`);
+  });
+}
+
+function downloadExcelCost() {
+  _loadXLSX(() => {
+    const wb = XLSX.utils.book_new();
+    const bycat = {};
+    products.forEach(p => { if (!bycat[p.cat]) bycat[p.cat]=[]; bycat[p.cat].push(p); });
+    const rows = [['สินค้า','หมวดหมู่','หน่วย','ต้นทุน (฿)','ราคาขาย (฿)','กำไร (฿)','%กำไร']];
+    let totalCost=0, totalRevenue=0;
+    Object.entries(bycat).forEach(([cat,items]) => {
+      items.forEach(p => {
+        const cost = Number(p.cost_price||0);
+        const price = Number(p.price||0);
+        const profit = price - cost;
+        const pct = cost>0 ? parseFloat(((profit/cost)*100).toFixed(1)) : '';
+        totalCost += cost; totalRevenue += price;
+        rows.push([
+          (p.emoji||'') + ' ' + p.name,
+          cat,
+          p.unit||'ชิ้น',
+          cost||'',
+          price,
+          cost>0 ? profit : '',
+          pct
+        ]);
+      });
+    });
+    // summary row
+    rows.push([]);
+    rows.push(['สรุปทั้งหมด','','',totalCost,totalRevenue,totalRevenue-totalCost,
+      totalCost>0 ? parseFloat((((totalRevenue-totalCost)/totalCost)*100).toFixed(1)) : '']);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:28},{wch:14},{wch:10},{wch:14},{wch:14},{wch:14},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws, 'รายงานต้นทุน');
+    const d = new Date().toLocaleDateString('th-TH',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\//g,'-');
+    XLSX.writeFile(wb, `รายงานต้นทุน_${d}.xlsx`);
+  });
+}
+
+function downloadImportTemplate() {
+  _loadXLSX(() => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['หมวดหมู่*','ชื่อสินค้า*','Emoji','รายละเอียด','หน่วย','ราคาปลีก*','ราคาส่ง','จำนวนขั้นต่ำส่ง','ต้นทุน'],
+      ['ข้าวสาร','ข้าวหอมมะลิ 5 กก.','🌾','ข้าวหอมใหม่','ถุง',150,'',''  ,110],
+      ['ของชำ','น้ำปลาตราปลาทอง 700ml','🍶','','ขวด',35,'','',22],
+      ['บรรจุภัณฑ์','ถุงร้อน 8x12 (100ใบ)','📦','','แพ็ค',25,'','',18],
+    ]);
+    ws['!cols'] = [{wch:14},{wch:24},{wch:8},{wch:20},{wch:10},{wch:12},{wch:10},{wch:18},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws, 'สินค้า');
+    XLSX.writeFile(wb, 'template_นำเข้าสินค้า.xlsx');
+  });
+}
+
+function openImportExcel() {
+  document.getElementById('import-xl-ov')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'import-xl-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+      <h3 style="margin:0 0 6px;color:#e65100;">📥 นำเข้าสินค้าจาก Excel</h3>
+      <p style="font-size:13px;color:#666;margin:0 0 16px;">อัปโหลดไฟล์ .xlsx ที่มีคอลัมน์ตาม Template<br>
+        ต้องมี: <b>หมวดหมู่, ชื่อสินค้า, ราคาปลีก</b> &nbsp;(แถวหัวตารางแถวแรก)</p>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px dashed #ffcc80;border-radius:10px;cursor:pointer;font-size:13px;color:#e65100;background:#fff8f0;">
+          📁 เลือกไฟล์ Excel
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="_previewImport(this)">
+        </label>
+        <button onclick="downloadImportTemplate()" style="padding:10px 14px;background:#e8f5e9;color:#1b5e20;border:1.5px solid #a5d6a7;border-radius:10px;cursor:pointer;font-size:12px;">📋 ดาวน์โหลด Template</button>
+      </div>
+      <div id="import-preview"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button id="import-confirm-btn" style="display:none;flex:1;padding:10px;background:#e65100;color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:14px;font-weight:700;" onclick="_confirmImport()">✅ นำเข้าทั้งหมด</button>
+        <button onclick="document.getElementById('import-xl-ov').remove()" style="padding:10px 18px;background:#eee;color:#333;border:none;border-radius:10px;cursor:pointer;">ยกเลิก</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+}
+
+let _importRows = [];
+function _previewImport(input) {
+  const file = input.files[0];
+  if (!file) return;
+  _loadXLSX(() => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      if (raw.length < 2) { document.getElementById('import-preview').innerHTML = '<p style="color:red;">ไม่พบข้อมูลในไฟล์</p>'; return; }
+      // map header
+      const hdr = raw[0].map(h => String(h).trim().toLowerCase());
+      const col = k => hdr.findIndex(h => h.includes(k));
+      const iCat   = Math.max(col('หมวดหมู่'), col('cat'));
+      const iName  = Math.max(col('ชื่อสินค้า'), col('name'));
+      const iEmoji = Math.max(col('emoji'));
+      const iDesc  = Math.max(col('รายละเอียด'), col('desc'));
+      const iUnit  = Math.max(col('หน่วย'), col('unit'));
+      const iPrice = Math.max(col('ราคาปลีก'), col('price'));
+      const iBulkP = Math.max(col('ราคาส่ง'), col('bulk'));
+      const iBulkQ = Math.max(col('จำนวนขั้นต่ำ'), col('qty'));
+      const iCost  = Math.max(col('ต้นทุน'), col('cost'));
+      if (iName < 0 || iPrice < 0) {
+        document.getElementById('import-preview').innerHTML = '<p style="color:red;font-size:13px;">❌ ไม่พบคอลัมน์ "ชื่อสินค้า" หรือ "ราคาปลีก" — กรุณาใช้ Template</p>';
+        return;
+      }
+      _importRows = [];
+      for (let i = 1; i < raw.length; i++) {
+        const r = raw[i];
+        const name = String(r[iName]||'').trim();
+        const price = parseFloat(r[iPrice]) || 0;
+        if (!name || price <= 0) continue;
+        _importRows.push({
+          cat:        iCat>=0  ? String(r[iCat]||'ของชำ').trim()||'ของชำ' : 'ของชำ',
+          name, price,
+          emoji:      iEmoji>=0? String(r[iEmoji]||'🛒').trim()||'🛒' : '🛒',
+          desc_text:  iDesc>=0 ? String(r[iDesc]||'').trim() : '',
+          unit:       iUnit>=0 ? String(r[iUnit]||'ชิ้น').trim()||'ชิ้น' : 'ชิ้น',
+          price_bulk: iBulkP>=0? parseFloat(r[iBulkP])||0 : 0,
+          bulk_qty:   iBulkQ>=0? parseInt(r[iBulkQ])||0 : 0,
+          cost_price: iCost>=0 ? parseFloat(r[iCost])||0 : 0,
+        });
+      }
+      const prev = document.getElementById('import-preview');
+      if (_importRows.length === 0) {
+        prev.innerHTML = '<p style="color:red;font-size:13px;">❌ ไม่พบแถวข้อมูลที่ถูกต้อง (ต้องมีชื่อสินค้าและราคา)</p>';
+        return;
+      }
+      // check against loaded products for new vs update
+      const existNames = new Set((products||[]).map(p => p.name.trim().toLowerCase()));
+      let nNew = 0, nUpd = 0;
+      _importRows.forEach(r => { existNames.has(r.name.trim().toLowerCase()) ? nUpd++ : nNew++; });
+      let html = `<p style="font-size:13px;font-weight:700;margin:0 0 4px;color:#1b5e20;">✅ พบ ${_importRows.length} รายการ</p>
+        <p style="font-size:12px;color:#555;margin:0 0 8px;">
+          🆕 ใหม่ <b style="color:#1b5e20">${nNew}</b> รายการ &nbsp;|&nbsp;
+          🔄 อัพเดตราคา/ต้นทุน <b style="color:#e65100">${nUpd}</b> รายการ
+          ${nUpd>0?'<span style="color:#888;"> (รูปภาพเดิมไม่เปลี่ยน)</span>':''}
+        </p>
+        <div style="max-height:220px;overflow-y:auto;border:1px solid #eee;border-radius:8px;">
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead><tr style="background:#fff3e0;position:sticky;top:0;">
+            <th style="padding:5px 8px;text-align:left;"></th>
+            <th style="padding:5px 8px;text-align:left;">สินค้า</th>
+            <th style="padding:5px 8px;text-align:left;">หมวด</th>
+            <th style="padding:5px 8px;text-align:right;">ราคา</th>
+            <th style="padding:5px 8px;text-align:right;">ต้นทุน</th>
+          </tr></thead><tbody>`;
+      _importRows.forEach(r => {
+        const isUpd = existNames.has(r.name.trim().toLowerCase());
+        const badge = isUpd
+          ? `<span style="font-size:10px;background:#fff3e0;color:#e65100;padding:1px 5px;border-radius:4px;font-weight:700;">🔄 อัพ</span>`
+          : `<span style="font-size:10px;background:#e8f5e9;color:#1b5e20;padding:1px 5px;border-radius:4px;font-weight:700;">🆕 ใหม่</span>`;
+        html += `<tr style="border-bottom:1px solid #f5f5f5;${isUpd?'background:#fffde7;':''}">
+          <td style="padding:4px 6px;">${badge}</td>
+          <td style="padding:4px 8px;">${r.emoji} ${r.name}</td>
+          <td style="padding:4px 8px;color:#777;">${r.cat}</td>
+          <td style="padding:4px 8px;text-align:right;font-weight:700;color:#c0392b;">฿${r.price.toLocaleString()}</td>
+          <td style="padding:4px 8px;text-align:right;color:#880e4f;">${r.cost_price>0?'฿'+r.cost_price.toLocaleString():'—'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table></div>';
+      prev.innerHTML = html;
+      document.getElementById('import-confirm-btn').style.display = 'block';
+      document.getElementById('import-confirm-btn').textContent = `✅ นำเข้า ${_importRows.length} รายการ`;
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function _confirmImport() {
+  const btn = document.getElementById('import-confirm-btn');
+  if (!btn || _importRows.length === 0) return;
+  btn.disabled = true; btn.textContent = '⏳ กำลังนำเข้า...';
+  const r = await api('POST', '/api/products/bulk', {products: _importRows});
+  if (r.ok) {
+    const parts = [];
+    if ((r.data?.added||0)>0) parts.push(`เพิ่มใหม่ ${r.data.added}`);
+    if ((r.data?.updated||0)>0) parts.push(`อัพเดต ${r.data.updated} (รูปไม่เปลี่ยน)`);
+    toast(`✅ ${parts.join(' | ')} รายการ`);
+    document.getElementById('import-xl-ov')?.remove();
+    _importRows = [];
+    renderProducts(document.getElementById('tab-products'));
+  } else {
+    toast('❌ เกิดข้อผิดพลาด: ' + (r.data?.error || 'server error ' + r.status));
+    btn.disabled = false; btn.textContent = `✅ นำเข้า ${_importRows.length} รายการ`;
+  }
 }
 
 async function resetAllStock() {
@@ -1455,7 +1807,12 @@ async function renderStoreSettings(c) {
         <div style="font-size:12px;color:#e65100;margin-top:4px;">แสดงแถบเหลืองให้ลูกค้าเห็นทุกคน เว้นว่างเพื่อซ่อน</div>
       </div>
       <div class="fg" style="background:#e8f5e9;border-radius:10px;padding:12px;">
-        <label style="font-size:14px;font-weight:700;">🎵 วีดีโอ TikTok / YouTube (สูงสุด 3 คลิป)</label>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <label style="font-size:14px;font-weight:700;">🎵 วีดีโอ TikTok / YouTube (สูงสุด 3 คลิป)</label>
+          <button id="video-hide-btn" onclick="_toggleVideoHidden()" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:8px;border:none;cursor:pointer;background:${s.video_hidden?'#fdecea':'#e8f5e9'};color:${s.video_hidden?'#c62828':'#1a6b2f'};">
+            ${s.video_hidden ? '🙈 ซ่อนอยู่' : '👁️ แสดงอยู่'}
+          </button>
+        </div>
         <div style="font-size:12px;color:#2e7d32;margin-bottom:10px;">วาง link TikTok หรือ YouTube — จะแสดงเป็น carousel ในหน้าร้าน</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
           <input class="fi" id="st-tiktok1" value="${s.tiktok_v1||''}" placeholder="คลิปที่ 1 — TikTok หรือ YouTube" onblur="resolveTikTok(this)">
@@ -1491,11 +1848,22 @@ async function renderStoreSettings(c) {
           </div>
           <div style="font-size:12px;font-weight:700;color:#555;margin-bottom:5px;">🖐 ลากรูป · เลื่อน Slider ซูม</div>
           <div id="promo-drag-box"
-            style="overflow:hidden;border-radius:10px;cursor:grab;border:2px dashed #c2185b;user-select:none;touch-action:none;background:#f5efe3;width:100%;max-width:${(PROMO_SHAPES||{})[s.promo_shape||'square']?.maxW||'260px'};aspect-ratio:${(PROMO_SHAPES||{})[s.promo_shape||'square']?.ratio||'1/1'};"
+            style="position:relative;overflow:hidden;border-radius:10px;cursor:grab;border:2px dashed #c2185b;user-select:none;touch-action:none;background:#f5efe3;width:100%;max-width:${(PROMO_SHAPES||{})[s.promo_shape||'square']?.maxW||'260px'};height:${s.promo_height||(PROMO_SHAPES||{})[s.promo_shape||'square']?.h||260}px;"
             onmousedown="event.preventDefault();_promoDragStart(event.clientX,event.clientY)"
             ontouchstart="event.preventDefault();_promoDragStart(event.touches[0].clientX,event.touches[0].clientY)">
             <img id="promo-drag-img" src="${s.promo_popup||''}"
               style="width:100%;height:100%;object-fit:cover;object-position:50% 50%;transform:${imgTransform(parseImgPos(s.promo_pos).px,parseImgPos(s.promo_pos).py,parseImgPos(s.promo_pos).zoom)};transform-origin:center;pointer-events:none;display:block;">
+            <div class="prh prh-r"  onmousedown="_promoResizeStart(event,'e')"  ontouchstart="_promoResizeStart(event,'e')"  title="ปรับกว้าง"></div>
+            <div class="prh prh-l"  onmousedown="_promoResizeStart(event,'w')"  ontouchstart="_promoResizeStart(event,'w')"  title="ปรับกว้าง"></div>
+            <div class="prh prh-t"  onmousedown="_promoResizeStart(event,'n')"  ontouchstart="_promoResizeStart(event,'n')"  title="ปรับสูง"></div>
+            <div class="prh prh-b"  onmousedown="_promoResizeStart(event,'s')"  ontouchstart="_promoResizeStart(event,'s')"  title="ปรับสูง"></div>
+            <div class="prh prh-br" onmousedown="_promoResizeStart(event,'se')" ontouchstart="_promoResizeStart(event,'se')" title="ปรับมุม"></div>
+            <div class="prh prh-bl" onmousedown="_promoResizeStart(event,'sw')" ontouchstart="_promoResizeStart(event,'sw')" title="ปรับมุม"></div>
+            <div class="prh prh-tr" onmousedown="_promoResizeStart(event,'ne')" ontouchstart="_promoResizeStart(event,'ne')" title="ปรับมุม"></div>
+            <div class="prh prh-tl" onmousedown="_promoResizeStart(event,'nw')" ontouchstart="_promoResizeStart(event,'nw')" title="ปรับมุม"></div>
+          </div>
+          <div style="font-size:11px;color:#888;text-align:right;margin-top:2px;">
+            ↔ <span id="promo-w-lb2"></span> &nbsp; ↕ <span id="promo-h-lb" style="font-weight:700;color:#c2185b;">${s.promo_height||(PROMO_SHAPES||{})[s.promo_shape||'square']?.h||260}px</span>
           </div>
           <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:12px;color:#555;font-weight:600;white-space:nowrap;">🔍 ซูม</span>
@@ -1559,9 +1927,11 @@ async function saveStoreSettings(myId) {
     promo_pos:    document.getElementById('promo-pos-hidden')?.value || '0 0 1',
     promo_shape:  document.getElementById('promo-shape-hidden')?.value || 'square',
     promo_width:  document.getElementById('promo-w-sl')?.value || '440',
+    promo_height: parseInt(document.getElementById('promo-drag-box')?.style.height) || 260,
     tiktok_v1:    document.getElementById('st-tiktok1')?.value.trim() || '',
     tiktok_v2:    document.getElementById('st-tiktok2')?.value.trim() || '',
     tiktok_v3:    document.getElementById('st-tiktok3')?.value.trim() || '',
+    video_hidden: storeSettings.video_hidden || false,
   };
   // resolve TikTok short URLs before saving
   const stEl = document.getElementById('tiktok-status');
@@ -1683,7 +2053,7 @@ function _doSaveCredImg(card) {
   });
 }
 
-function showCredentialCard(username, password, role) {
+function showCredentialCard(username, password, role, logoutOnClose=false) {
   const roleLabel = role === 'superadmin' ? '⭐ Super Admin' : '✏️ Editor';
   const url = location.origin;
   const el = document.createElement('div');
@@ -1715,7 +2085,7 @@ function showCredentialCard(username, password, role) {
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
         <button onclick="copyCredentials('${username}','${password}','${url}',this)" style="background:#1976d2;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">📋 คัดลอก</button>
         <button onclick="saveCredentialImg()" style="background:#c2185b;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">💾 บันทึกรูป</button>
-        <button onclick="document.getElementById('cred-overlay').remove()" style="background:#555;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">✕ ปิด</button>
+        <button onclick="document.getElementById('cred-overlay').remove();${logoutOnClose?'doLogout();':''}" style="background:#555;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">${logoutOnClose?'✕ ปิดและออกระบบ':'✕ ปิด'}</button>
       </div>
     </div>`;
   document.body.appendChild(el);
@@ -1728,9 +2098,9 @@ async function delUser(id, name) {
   else toast('❌ ' + (r.data?.error||'ลบไม่ได้'));
 }
 
-let _resetUid = null;
+let _resetUid = null, _resetUsername = '';
 function openResetUserPw(id, name) {
-  _resetUid = id;
+  _resetUid = id; _resetUsername = name;
   document.getElementById('ru-name').textContent = `👤 ${name}`;
   document.getElementById('ru-pw').value  = '';
   document.getElementById('ru-pw2').value = '';
@@ -1747,29 +2117,45 @@ async function doResetUserPw() {
   if (pw !== pw2) { err.textContent = 'รหัสผ่านทั้งสองครั้งไม่ตรงกัน'; return; }
   const r = await api('PUT', `/api/users/${_resetUid}/reset-password`, { new_password: pw });
   if (r.ok) {
-    toast('✅ รีเซ็ตรหัสผ่านสำเร็จ');
     close_('ov-reset-user');
+    showCredentialCard(_resetUsername, pw, 'editor');
   } else {
     err.textContent = r.data?.error || 'เกิดข้อผิดพลาด';
   }
 }
 
 // ── ADMIN: AUDIT LOG ──────────────────────────────────────────────────
+let _auditData = [];
 async function renderAudit(c) {
   c.innerHTML = '<div class="loading">⏳ กำลังโหลด...</div>';
   const r = await api('GET','/api/audit');
   if (!r.ok) { c.innerHTML='<div class="err">โหลดไม่ได้</div>'; return; }
-  if (!r.data.length) { c.innerHTML='<div style="text-align:center;color:#999;padding:20px;">ย้งไม่มีข้อมูล</div>'; return; }
-  c.innerHTML = `<div class="alog">
-    <div class="alog-row alog-hdr"><div>Action / รายละเอียด</div><div>User</div><div>เวลา</div><div>IP</div></div>
-    ${r.data.map(a=>`
-    <div class="alog-row">
-      <div><span class="alog-action">${a.action}</span><br><span style="color:#666;">${a.detail||''}</span></div>
-      <div>${a.username||'-'}</div>
-      <div class="alog-ts">${a.ts}</div>
-      <div class="alog-ip">${a.ip||'-'}</div>
-    </div>`).join('')}
-  </div>`;
+  _auditData = r.data;
+  _renderAuditTable(c, '');
+}
+function _renderAuditTable(c, filterUser) {
+  const users = [...new Set(_auditData.map(a => a.username).filter(Boolean))].sort();
+  const rows = filterUser ? _auditData.filter(a => a.username === filterUser) : _auditData;
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:700;color:#555;">👤 กรองแอดมิน:</span>
+      <select style="font-size:12px;padding:4px 8px;border-radius:7px;border:1.5px solid #e0d6c8;background:#fff;" onchange="_renderAuditTable(document.getElementById('a-content'), this.value)">
+        <option value="">— ทั้งหมด —</option>
+        ${users.map(u => `<option value="${u}" ${u===filterUser?'selected':''}>${u}</option>`).join('')}
+      </select>
+      <span style="font-size:11px;color:#999;margin-left:auto;">${rows.length} รายการ</span>
+    </div>
+    ${!rows.length ? '<div style="text-align:center;color:#999;padding:20px;">ไม่มีข้อมูล</div>' : `
+    <div class="alog">
+      <div class="alog-row alog-hdr"><div>Action / รายละเอียด</div><div>User</div><div>เวลา</div><div>IP</div></div>
+      ${rows.map(a=>`
+      <div class="alog-row">
+        <div><span class="alog-action">${a.action}</span><br><span style="color:#666;">${a.detail||''}</span></div>
+        <div>${a.username||'-'}</div>
+        <div class="alog-ts">${a.ts}</div>
+        <div class="alog-ip">${a.ip||'-'}</div>
+      </div>`).join('')}
+    </div>`}`;
 }
 
 // ── ADMIN: CHANGE PASSWORD ────────────────────────────────────────────
@@ -1798,8 +2184,7 @@ async function changePw() {
   if (!me.ok) { errEl.textContent = 'session หมดอายุ กรุณา login ใหม่'; doLogout(); return; }
   const r = await api('PUT',`/api/users/${me.data.id}/password`, body);
   if (r.ok) {
-    toast('✅ เปลี่ยนรหัสผ่านแล้ว กรุณา login ใหม่');
-    doLogout();
+    showCredentialCard(me.data.username, p1, me.data.role || 'superadmin', true);
   } else {
     errEl.textContent = r.data?.error || 'เกิดข้อผิดพลาด';
   }
@@ -1828,7 +2213,10 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') closeLightbox()
 function open_(id) { document.getElementById(id).classList.add('show'); }
 function close_(id) { document.getElementById(id).classList.remove('show'); }
 document.querySelectorAll('.overlay').forEach(el =>
-  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('show'); })
+  el.addEventListener('click', e => {
+    // admin panel ปิดได้แค่กดปุ่ม X หรือออกจากระบบเท่านั้น
+    if (e.target === el && el.id !== 'ov-admin') el.classList.remove('show');
+  })
 );
 
 let toastTimer;

@@ -128,6 +128,9 @@ def _init_sqlite():
             CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
             CREATE TABLE IF NOT EXISTS reset_tokens(token TEXT PRIMARY KEY,user_id INTEGER NOT NULL,expires_at TEXT NOT NULL);
         """)
+        # migration: add cost_price if not exists
+        try: db._conn.execute("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0")
+        except: pass
         db.commit()
         _seed_if_empty(db)
 
@@ -142,6 +145,9 @@ def _init_pg():
             "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT)",
             "CREATE TABLE IF NOT EXISTS reset_tokens(token TEXT PRIMARY KEY,user_id INTEGER NOT NULL,expires_at TEXT NOT NULL)",
         ]: db.execute(s)
+        # migration: add cost_price if not exists
+        try: db.execute("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0")
+        except: pass
         db.commit()
         _seed_if_empty(db)
 
@@ -216,6 +222,11 @@ def _audit(uid, uname, action, detail, ip):
     with _db_lock, get_db() as db:
         db.execute("INSERT INTO audit_log(user_id,username,action,detail,ip,ts) VALUES(?,?,?,?,?,?)",
                    (uid, uname, action, detail, ip, _now()))
+        # auto-clear: keep only latest 1000 entries
+        cnt = db.execute("SELECT COUNT(*) as n FROM audit_log").fetchone()
+        n = cnt['n'] if isinstance(cnt, dict) else cnt[0]
+        if n > 1000:
+            db.execute("DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log ORDER BY id ASC LIMIT ?)", (n - 1000,))
         db.commit()
 
 # ── Email ───────────────────────────────────────────────────────────────────
@@ -261,7 +272,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         p = self.path.split('?')[0]
         {'/api/login': self._login, '/api/logout': self._logout,
-         '/api/products': self._add_product, '/api/users': self._add_user,
+         '/api/products': self._add_product, '/api/products/bulk': self._bulk_add_products,
+         '/api/users': self._add_user,
          '/api/upload': self._upload_image, '/api/settings': self._put_settings,
          '/api/forgot-password': self._forgot_pw, '/api/reset-password': self._reset_pw
          }.get(p, lambda: self.send_error(404))()
@@ -334,7 +346,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "SELECT id,name,cat,price,unit,desc_text,emoji,img_url,img_pos,"
                 "COALESCE(in_stock,1) as in_stock,COALESCE(price_bulk,0) as price_bulk,"
                 "COALESCE(bulk_qty,0) as bulk_qty,COALESCE(visible,1) as visible,"
-                "COALESCE(featured,0) as featured FROM products ORDER BY featured DESC,cat,name,price"
+                "COALESCE(featured,0) as featured,COALESCE(cost_price,0) as cost_price FROM products ORDER BY featured DESC,cat,name,price"
             ).fetchall()
         self._json([dict(r) for r in rows])
 
@@ -374,14 +386,56 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except: self._json({'error':'ข้อมูลไม่ครบ'},400); return
         with _db_lock, get_db() as db:
             nid = db.execute_insert(
-                "INSERT INTO products(name,cat,price,unit,desc_text,emoji,img_url,img_pos,in_stock,price_bulk,bulk_qty)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO products(name,cat,price,unit,desc_text,emoji,img_url,img_pos,in_stock,price_bulk,bulk_qty,cost_price)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (name,d.get('cat','ของชำ'),price,d.get('unit','ชิ้น'),d.get('desc_text',''),
                  d.get('emoji','🛒'),d.get('img_url',''),d.get('img_pos','50% 50%'),1,
-                 float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0)))
+                 float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0),
+                 float(d.get('cost_price',0) or 0)))
             db.commit()
         _audit(u['id'],u['username'],'ADD_PRODUCT',f"เพิ่ม:{name} ฿{price}",self._ip())
         self._json({'id':nid,'ok':True})
+
+    def _bulk_add_products(self):
+        u = self._user()
+        if not u: self._json({'error':'กรุณาเข้าสู่ระบบ'},401); return
+        try:
+            d = self._body()
+            items = d.get('products', [])
+            if not isinstance(items, list) or len(items) == 0: raise ValueError
+        except: self._json({'error':'ข้อมูลไม่ถูกต้อง'},400); return
+        added = updated = 0
+        now = _now()
+        with _db_lock, get_db() as db:
+            for row in items:
+                name = str(row.get('name','')).strip()
+                cat  = str(row.get('cat','ของชำ')).strip() or 'ของชำ'
+                try: price = float(row.get('price',0))
+                except: price = 0
+                if not name or price <= 0: continue
+                unit      = str(row.get('unit','ชิ้น')).strip() or 'ชิ้น'
+                desc_text = str(row.get('desc_text','')).strip()
+                price_bulk= float(row.get('price_bulk',0) or 0)
+                bulk_qty  = int(float(row.get('bulk_qty',0) or 0))
+                cost_price= float(row.get('cost_price',0) or 0)
+                # upsert: match on name (case-insensitive)
+                ex = db.execute("SELECT id FROM products WHERE LOWER(name)=LOWER(?)", (name,)).fetchone()
+                if ex:
+                    pid = ex['id'] if isinstance(ex, dict) else ex[0]
+                    db.execute(
+                        "UPDATE products SET cat=?,price=?,unit=?,desc_text=?,price_bulk=?,bulk_qty=?,cost_price=?,updated_at=? WHERE id=?",
+                        (cat, price, unit, desc_text, price_bulk, bulk_qty, cost_price, now, pid))
+                    updated += 1
+                else:
+                    emoji = str(row.get('emoji','🛒')).strip() or '🛒'
+                    db.execute_insert(
+                        "INSERT INTO products(name,cat,price,unit,desc_text,emoji,in_stock,price_bulk,bulk_qty,cost_price)"
+                        " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (name, cat, price, unit, desc_text, emoji, 1, price_bulk, bulk_qty, cost_price))
+                    added += 1
+            db.commit()
+        _audit(u['id'],u['username'],'BULK_IMPORT',f"เพิ่ม {added} อัพเดต {updated} รายการ",self._ip())
+        self._json({'ok':True,'added':added,'updated':updated})
 
     def _update_product(self, pid):
         u = self._user()
@@ -394,11 +448,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             now = _now()
             ex = dict(ex)
             db.execute(
-                "UPDATE products SET name=?,cat=?,price=?,unit=?,desc_text=?,emoji=?,img_url=?,img_pos=?,price_bulk=?,bulk_qty=?,updated_at=? WHERE id=?",
+                "UPDATE products SET name=?,cat=?,price=?,unit=?,desc_text=?,emoji=?,img_url=?,img_pos=?,price_bulk=?,bulk_qty=?,cost_price=?,updated_at=? WHERE id=?",
                 (d.get('name',ex['name']),d.get('cat',ex['cat']),float(d.get('price',ex['price'])),
                  d.get('unit',ex['unit']),d.get('desc_text',ex['desc_text']),d.get('emoji',ex['emoji']),
                  d.get('img_url',ex['img_url']),d.get('img_pos',ex.get('img_pos','50% 50%')),
-                 float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0),now,pid))
+                 float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0),
+                 float(d.get('cost_price',0) or 0),now,pid))
             db.commit()
         _audit(u['id'],u['username'],'UPDATE_PRODUCT',f"#{pid}",self._ip()); self._json({'ok':True})
 
