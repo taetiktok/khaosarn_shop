@@ -492,6 +492,7 @@ let activeCat = 'ทั้งหมด';
 let session = JSON.parse(localStorage.getItem('shop_session') || 'null');
 let editPid = null;
 let storeSettings = {};
+let cart = {}; // { id: { product, qty } }
 
 // ── IMAGE DRAG STATE ──────────────────────────────────────────────────
 // ใช้ transform:scale(Z) translate(tx%,ty%) — ทำงานกับทุกอัตราส่วนรูป
@@ -809,7 +810,7 @@ async function api(method, path, body) {
 // ── LOAD PRODUCTS ─────────────────────────────────────────────────────
 async function loadProducts() {
   const r = await api('GET', '/api/products');
-  if (r.ok) { products = r.data; render(); }
+  if (r.ok) { products = r.data; render(); _restoreCart(); }
   else document.getElementById('main').innerHTML = '<div class="empty">❌ โหลดสินค้าไม่ได้</div>';
 }
 
@@ -994,13 +995,27 @@ function _toggleVideoHidden() {
   render();
 }
 
+function _toggleVideoClip(n) {
+  const key = `video${n}_hidden`;
+  storeSettings[key] = !storeSettings[key];
+  const btn = document.getElementById(`vcb-${n}`);
+  if (btn) {
+    btn.textContent = storeSettings[key] ? '🙈' : '👁️';
+    btn.title = storeSettings[key] ? 'ซ่อนอยู่ — กดเพื่อแสดง' : 'แสดงอยู่ — กดเพื่อซ่อน';
+    btn.style.background = storeSettings[key] ? '#fdecea' : '#e8f5e9';
+    btn.style.color = storeSettings[key] ? '#c62828' : '#2e7d32';
+  }
+  render();
+}
+
 function buildVideoSection() {
   if (storeSettings.video_hidden) return '';
-  const rawUrls = [
-    storeSettings.tiktok_v1||'',
-    storeSettings.tiktok_v2||'',
-    storeSettings.tiktok_v3||'',
-  ].filter(u => u && detectVideoType(u));
+  const allUrls = [
+    { url: storeSettings.tiktok_v1||'', hidden: storeSettings.video1_hidden },
+    { url: storeSettings.tiktok_v2||'', hidden: storeSettings.video2_hidden },
+    { url: storeSettings.tiktok_v3||'', hidden: storeSettings.video3_hidden },
+  ];
+  const rawUrls = allUrls.filter(v => v.url && !v.hidden && detectVideoType(v.url)).map(v => v.url);
   if (!rawUrls.length) return '';
   _videoIdx = 0;
 
@@ -1158,20 +1173,38 @@ async function renderAdminProducts(c) {
   products = r.data;
   const isSA = session.role === 'superadmin';
   c.innerHTML = `
-    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-      <button class="btn btn-g" style="font-size:12px;" onclick="openAddProduct()">➕ เพิ่มสินค้าใหม่</button>
-      <button class="btn btn-gh" style="font-size:12px;" onclick="printPriceList()">🖨️ พิมพ์ (ลูกค้า)</button>
-      <button class="btn btn-gh" style="font-size:12px;background:#fce4ec;color:#c62828;border-color:#f48fb1;" onclick="printCostList()">🔒 พิมพ์ (เจ้าของ)</button>
-      <button class="btn btn-gh" style="font-size:12px;background:#e3f2fd;color:#0d47a1;border-color:#90caf9;" onclick="downloadExcel()">📊 Excel (ลูกค้า)</button>
-      <button class="btn btn-gh" style="font-size:12px;background:#f3e5f5;color:#6a1b9a;border-color:#ce93d8;" onclick="downloadExcelCost()">🔒 Excel (เจ้าของ)</button>
-      <button class="btn btn-gh" style="font-size:12px;background:#e8f5e9;color:#1b5e20;border-color:#a5d6a7;" onclick="downloadImportTemplate()">📋 Template</button>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-g" style="font-size:13px;padding:8px 16px;font-weight:700;" onclick="openAddProduct()">➕ เพิ่มสินค้า</button>
+      <div style="position:relative;display:inline-block;">
+        <button class="btn btn-gh" style="font-size:12px;" onclick="toggleExportMenu()">📤 ส่งออก ▾</button>
+        <div id="export-menu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1.5px solid #ddd;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:200;min-width:180px;overflow:hidden;">
+          <button onclick="printPriceList();closeExportMenu()" style="display:block;width:100%;padding:9px 14px;text-align:left;border:none;background:none;cursor:pointer;font-size:13px;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">🖨️ พิมพ์ — ลูกค้า</button>
+          <button onclick="printCostList();closeExportMenu()" style="display:block;width:100%;padding:9px 14px;text-align:left;border:none;background:none;cursor:pointer;font-size:13px;color:#c62828;" onmouseover="this.style.background='#fce4ec'" onmouseout="this.style.background='none'">🔒 พิมพ์ — เจ้าของ</button>
+          <div style="border-top:1px solid #eee;"></div>
+          <button onclick="downloadExcel();closeExportMenu()" style="display:block;width:100%;padding:9px 14px;text-align:left;border:none;background:none;cursor:pointer;font-size:13px;color:#0d47a1;" onmouseover="this.style.background='#e3f2fd'" onmouseout="this.style.background='none'">📊 Excel — ลูกค้า</button>
+          <button onclick="downloadExcelCost();closeExportMenu()" style="display:block;width:100%;padding:9px 14px;text-align:left;border:none;background:none;cursor:pointer;font-size:13px;color:#6a1b9a;" onmouseover="this.style.background='#f3e5f5'" onmouseout="this.style.background='none'">🔒 Excel — เจ้าของ</button>
+        </div>
+      </div>
       <button class="btn btn-gh" style="font-size:12px;background:#fff3e0;color:#e65100;border-color:#ffcc80;" onclick="openImportExcel()">📥 นำเข้า Excel</button>
-      <button class="btn" style="font-size:12px;background:#e8f5e9;color:#1a6b2f;border:1.5px solid #2d9e4f;" onclick="resetAllStock()">✅ เปิดขายทั้งหมด</button>
-      <button class="btn" style="font-size:12px;background:#fff8e1;color:#f57f17;border:1.5px solid #fbc02d;" onclick="resetAllVisible()">👁️ แสดงทั้งหมด</button>
+      <button class="btn btn-gh" style="font-size:12px;background:#e8f5e9;color:#1b5e20;border-color:#a5d6a7;" onclick="downloadImportTemplate()">📋 Template</button>
+      <div style="width:1px;height:24px;background:#ddd;margin:0 2px;"></div>
+      <button class="btn btn-gh" style="font-size:12px;" onclick="resetAllStock()">✅ เปิดขายทั้งหมด</button>
+      <button class="btn btn-gh" style="font-size:12px;" onclick="resetAllVisible()">👁️ แสดงทั้งหมด</button>
     </div>
     ${isSA ? '' : '<div style="font-size:12px;color:#2563eb;background:#dbeafe;padding:8px 12px;border-radius:8px;margin-bottom:10px;">✏️ Editor — แก้ไข เพิ่ม เปิด/ปิดขาย แสดง/ซ่อน แนะนำได้ทั้งหมด (ยกเว้นลบ)</div>'}
-    <div class="plist">${r.data.map(p => `
-      <div class="prow">
+    <div id="admin-cat-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      ${['ทั้งหมด',...[...new Set(r.data.map(p=>p.cat).filter(Boolean))].sort()].map((cat,i) => {
+        const cnt = cat==='ทั้งหมด' ? r.data.length : r.data.filter(p=>p.cat===cat).length;
+        return `<button onclick="filterAdminCat('${cat}')" data-acat="${cat}"
+          style="padding:4px 12px;border-radius:20px;border:1.5px solid ${i===0?'#1a6b2f':'#ccc'};
+          background:${i===0?'#1a6b2f':'#f9f9f9'};color:${i===0?'#fff':'#444'};
+          font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
+          ${cat==='ทั้งหมด'?'🗂️ ':''}${cat} <span style="opacity:.7;">${cnt}</span>
+        </button>`;
+      }).join('')}
+    </div>
+    <div class="plist" id="admin-plist">${r.data.map(p => `
+      <div class="prow" data-cat="${p.cat}">
         <div style="font-size:20px;flex-shrink:0">${p.emoji||'🛒'}</div>
         <div class="pname">${p.name}<small>${p.desc_text||''}</small></div>
         <div class="pcat">${p.cat}</div>
@@ -1214,70 +1247,107 @@ function openEditProduct(id) {
 
 function pfFields(p={}, editorOnly=false) {
   const ro = editorOnly;
+  const sCard = 'background:#fff;border:1.5px solid #e8e0d0;border-radius:12px;padding:14px 16px;margin-bottom:10px;';
+  const sHead = 'font-size:13px;font-weight:800;color:#555;margin:0 0 10px;display:flex;align-items:center;gap:6px;';
+  const sGrid2 = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;';
+  const sGrid3 = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;';
+  const sLbl = 'font-size:12px;color:#666;font-weight:600;margin-bottom:3px;display:block;';
   return `
-    <div class="fg"><label>ชื่อสินค้า *</label>
-      <input class="fi" id="pf-name" value="${p.name||''}" ${ro?'readonly style="background:#f5f5f5"':''}></div>
-    <div class="fg"><label>หมวดหมู่ (พิมพ์เองหรือเลือกจากรายการ)</label>
-      <input class="fi" id="pf-cat" list="cat-list" value="${p.cat||''}" ${ro?'readonly style="background:#f5f5f5"':''} placeholder="เช่น ข้าวสาร, ของชำ ...">
-      <datalist id="cat-list">${[...new Set(products.map(q=>q.cat).filter(Boolean))].map(c=>`<option value="${c}">`).join('')}</datalist>
-    </div>
-    <div class="fg"><label>ราคาปลีก (บาท) *</label>
-      <input class="fi" id="pf-price" type="number" value="${p.price||''}"></div>
-    <div class="fg" style="background:#fce4ec;border-radius:8px;padding:10px;">
-      <label style="font-weight:700;">🔒 ต้นทุน (บาท) — ไม่แสดงให้ลูกค้าเห็น</label>
-      <input class="fi" id="pf-cost" type="number" min="0" step="0.01" value="${p.cost_price||0}" style="margin-top:6px;">
-      <div style="font-size:11px;color:#c62828;margin-top:4px;">ข้อมูลนี้จะปรากฏเฉพาะในรายงานของเจ้าของร้านเท่านั้น</div>
-    </div>
-    <div class="fg"><label>หน่วย</label>
-      <input class="fi" id="pf-unit" value="${p.unit||''}" ${ro?'readonly style="background:#f5f5f5"':''}></div>
-    <div class="fg" style="background:#e8f4fd;border-radius:8px;padding:10px;">
-      <label style="font-weight:700;">🏷️ ราคาส่ง (ไม่บังคับ)</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
-        <div><label style="font-size:11px;color:#555;">ซื้อตั้งแต่ (ชิ้น/ถุง)</label>
-          <input class="fi" id="pf-bqty" type="number" min="0" value="${p.bulk_qty||0}" placeholder="0=ปิด"></div>
-        <div><label style="font-size:11px;color:#555;">ราคาส่ง (บาท)</label>
-          <input class="fi" id="pf-bprice" type="number" min="0" value="${p.price_bulk||0}"></div>
+  <!-- ── Section 1: ข้อมูลพื้นฐาน ── -->
+  <div style="${sCard}">
+    <div style="${sHead}">📦 ข้อมูลพื้นฐาน</div>
+    <div style="${sGrid2}">
+      <div style="grid-column:1/-1;">
+        <label style="${sLbl}">ชื่อสินค้า *</label>
+        <input class="fi" id="pf-name" value="${p.name||''}" ${ro?'readonly style="background:#f5f5f5"':''} style="margin:0;">
       </div>
-      <div style="font-size:11px;color:#1a7fc4;margin-top:4px;">ใส่ 0 ทั้งคู่ถ้าไม่มีราคาส่ง</div>
+      <div>
+        <label style="${sLbl}">หมวดหมู่</label>
+        <input class="fi" id="pf-cat" list="cat-list" value="${p.cat||''}" ${ro?'readonly style="background:#f5f5f5"':''} placeholder="ข้าวสาร, ของชำ..." style="margin:0;">
+        <datalist id="cat-list">${[...new Set(products.map(q=>q.cat).filter(Boolean))].map(c=>`<option value="${c}">`).join('')}</datalist>
+      </div>
+      <div>
+        <label style="${sLbl}">หน่วย</label>
+        <input class="fi" id="pf-unit" value="${p.unit||'ชิ้น'}" ${ro?'readonly style="background:#f5f5f5"':''} style="margin:0;">
+      </div>
+      <div style="grid-column:1/-1;">
+        <label style="${sLbl}">รายละเอียด</label>
+        <input class="fi" id="pf-desc" value="${p.desc_text||''}" placeholder="เช่น น้ำหนัก 5 กก., ข้าวหอมใหม่..." style="margin:0;">
+      </div>
     </div>
-    <div class="fg"><label>รายละเอียด</label>
-      <input class="fi" id="pf-desc" value="${p.desc_text||''}"></div>
-    ${!ro ? `
-    <div class="fg"><label>อีโมจิ (ถ้าไม่มีรูป)</label>
-      <input class="fi" id="pf-emoji" value="${p.emoji||'🛒'}" maxlength="4"></div>
-    <div class="fg"><label>รูปภาพสินค้า</label>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <label style="background:#2d9e4f;color:#fff;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;white-space:nowrap;">
+  </div>
+
+  <!-- ── Section 2: ราคา ── -->
+  <div style="${sCard}">
+    <div style="${sHead}">💰 ราคา</div>
+    <div style="${sGrid2};margin-bottom:10px;">
+      <div>
+        <label style="${sLbl}">ราคาปลีก (บาท) *</label>
+        <input class="fi" id="pf-price" type="number" min="0" step="0.01" value="${p.price||''}" style="margin:0;">
+      </div>
+      <div style="background:#fce4ec;border-radius:8px;padding:8px;">
+        <label style="${sLbl}color:#c62828;">🔒 ต้นทุน (บาท)</label>
+        <input class="fi" id="pf-cost" type="number" min="0" step="0.01" value="${p.cost_price||0}" style="margin:0;background:#fff8f8;">
+        <div style="font-size:10px;color:#c62828;margin-top:3px;">เจ้าของเห็นเท่านั้น</div>
+      </div>
+    </div>
+    <div style="border-top:1px dashed #ddd;padding-top:10px;">
+      <div style="${sLbl}color:#1a7fc4;">🏷️ ราคาส่ง (ไม่บังคับ — ใส่ 0 ถ้าไม่มี)</div>
+      <div style="${sGrid2}">
+        <div>
+          <label style="${sLbl}">ซื้อตั้งแต่ (ชิ้น)</label>
+          <input class="fi" id="pf-bqty" type="number" min="0" value="${p.bulk_qty||0}" style="margin:0;">
+        </div>
+        <div>
+          <label style="${sLbl}">ราคาส่ง (บาท)</label>
+          <input class="fi" id="pf-bprice" type="number" min="0" value="${p.price_bulk||0}" style="margin:0;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 3: รูปภาพ ── -->
+  ${!ro ? `
+  <div style="${sCard}">
+    <div style="${sHead}">🖼️ รูปภาพ & อีโมจิ</div>
+    <div style="${sGrid2};margin-bottom:10px;">
+      <div>
+        <label style="${sLbl}">อีโมจิ (ถ้าไม่มีรูป)</label>
+        <input class="fi" id="pf-emoji" value="${p.emoji||'🛒'}" maxlength="4" style="margin:0;font-size:22px;text-align:center;">
+      </div>
+      <div style="display:flex;align-items:flex-end;">
+        <label style="width:100%;background:#2d9e4f;color:#fff;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;text-align:center;">
           📷 เลือกรูปจากเครื่อง
           <input type="file" id="pf-file" accept="image/*" style="display:none" onchange="uploadImg()">
         </label>
-        <span style="color:#999;font-size:12px;">หรือ</span>
-        <input class="fi" id="pf-img" value="${p.img_url||''}" placeholder="วาง URL รูปภาพ" style="flex:1;min-width:150px;" oninput="refreshDragPreview(this.value,'50% 50% 1')">
       </div>
-      <div id="pf-upload-status" style="font-size:12px;color:#2d9e4f;margin-top:4px;"></div>
-      <div id="pf-pos-wrap" style="display:${p.img_url?'block':'none'};margin-top:10px;">
-        <div style="font-size:12px;color:#555;margin-bottom:6px;font-weight:600;">🖐 ลากรูปเพื่อปรับตำแหน่ง · ซูมด้วย Slider ด้านล่าง</div>
-        <div id="pf-drag-preview"
-          style="width:100%;max-width:220px;aspect-ratio:1;overflow:hidden;border-radius:10px;cursor:grab;border:2px dashed #2d9e4f;user-select:none;touch-action:none;background:#f5efe3;"
-          onmousedown="event.preventDefault();_dragStart(event.clientX,event.clientY)"
-          ontouchstart="event.preventDefault();_dragStart(event.touches[0].clientX,event.touches[0].clientY)">
-          <img id="pf-drag-img" src="${p.img_url||''}"
-            style="width:100%;height:100%;object-fit:cover;object-position:50% 50%;transform:${imgTransform(parseImgPos(p.img_pos).px,parseImgPos(p.img_pos).py,parseImgPos(p.img_pos).zoom)};transform-origin:center;pointer-events:none;display:block;">
-        </div>
-        <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:12px;color:#555;font-weight:600;white-space:nowrap;">🔍 ซูม</span>
-          <input type="range" id="pf-zoom-slider" min="100" max="300" step="5" value="${Math.round((parseImgPos(p.img_pos).zoom||1)*100)}"
-            style="flex:1;cursor:pointer;" oninput="_zoomChange(this.value)">
-          <span id="pf-zoom-label" style="font-size:12px;font-weight:700;color:#1a6b2f;min-width:38px;text-align:right;">${Math.round((parseImgPos(p.img_pos).zoom||1)*100)}%</span>
-          <button type="button" class="btn btn-gh" style="font-size:11px;padding:4px 9px;" onclick="_resetImgPos()">รีเซ็ต</button>
-        </div>
-        <input type="hidden" id="pf-img-pos" value="${p.img_pos||'50% 50% 1'}">
-        <div style="font-size:11px;color:#999;margin-top:3px;">ลากรูปเพื่อเลือกตำแหน่ง · เลื่อน slider เพื่อย่อ/ขยาย</div>
+    </div>
+    <div>
+      <label style="${sLbl}">URL รูปภาพ (หรือวางลิงก์)</label>
+      <input class="fi" id="pf-img" value="${p.img_url||''}" placeholder="https://... หรืออัปโหลดจากปุ่มด้านบน" style="margin:0;" oninput="refreshDragPreview(this.value,'50% 50% 1')">
+    </div>
+    <div id="pf-upload-status" style="font-size:12px;color:#2d9e4f;margin-top:4px;"></div>
+    <div id="pf-pos-wrap" style="display:${p.img_url?'block':'none'};margin-top:10px;">
+      <div style="font-size:12px;color:#555;margin-bottom:6px;font-weight:600;">🖐 ลากรูปเพื่อปรับตำแหน่ง · ซูมด้วย Slider</div>
+      <div id="pf-drag-preview"
+        style="width:100%;max-width:220px;aspect-ratio:1;overflow:hidden;border-radius:10px;cursor:grab;border:2px dashed #2d9e4f;user-select:none;touch-action:none;background:#f5efe3;"
+        onmousedown="event.preventDefault();_dragStart(event.clientX,event.clientY)"
+        ontouchstart="event.preventDefault();_dragStart(event.touches[0].clientX,event.touches[0].clientY)">
+        <img id="pf-drag-img" src="${p.img_url||''}"
+          style="width:100%;height:100%;object-fit:cover;object-position:50% 50%;transform:${imgTransform(parseImgPos(p.img_pos).px,parseImgPos(p.img_pos).py,parseImgPos(p.img_pos).zoom)};transform-origin:center;pointer-events:none;display:block;">
       </div>
-    </div>` : `
-    <input type="hidden" id="pf-emoji" value="${p.emoji||'🛒'}">
-    <input type="hidden" id="pf-img" value="${p.img_url||''}">
-    <input type="hidden" id="pf-img-pos" value="${p.img_pos||'50% 50%'}">`}`;
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:12px;color:#555;font-weight:600;white-space:nowrap;">🔍 ซูม</span>
+        <input type="range" id="pf-zoom-slider" min="100" max="300" step="5" value="${Math.round((parseImgPos(p.img_pos).zoom||1)*100)}" style="flex:1;cursor:pointer;" oninput="_zoomChange(this.value)">
+        <span id="pf-zoom-label" style="font-size:12px;font-weight:700;color:#1a6b2f;min-width:38px;text-align:right;">${Math.round((parseImgPos(p.img_pos).zoom||1)*100)}%</span>
+        <button type="button" class="btn btn-gh" style="font-size:11px;padding:4px 9px;" onclick="_resetImgPos()">รีเซ็ต</button>
+      </div>
+      <input type="hidden" id="pf-img-pos" value="${p.img_pos||'50% 50% 1'}">
+    </div>
+  </div>` : `
+  <input type="hidden" id="pf-emoji" value="${p.emoji||'🛒'}">
+  <input type="hidden" id="pf-img" value="${p.img_url||''}">
+  <input type="hidden" id="pf-img-pos" value="${p.img_pos||'50% 50%'}">`}`;
 }
 
 function readFileAsBase64(file) {
@@ -1529,6 +1599,34 @@ function downloadExcelCost() {
   });
 }
 
+function toggleExportMenu() {
+  const m = document.getElementById('export-menu');
+  if (!m) return;
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function closeExportMenu() {
+  const m = document.getElementById('export-menu');
+  if (m) m.style.display = 'none';
+}
+document.addEventListener('click', e => {
+  const m = document.getElementById('export-menu');
+  if (m && m.style.display !== 'none' && !m.parentElement.contains(e.target)) closeExportMenu();
+});
+
+function filterAdminCat(cat) {
+  // update chip styles
+  document.querySelectorAll('#admin-cat-filter button[data-acat]').forEach(b => {
+    const on = b.dataset.acat === cat;
+    b.style.background = on ? '#1a6b2f' : '#f9f9f9';
+    b.style.color = on ? '#fff' : '#444';
+    b.style.borderColor = on ? '#1a6b2f' : '#ccc';
+  });
+  // filter rows
+  document.querySelectorAll('#admin-plist .prow[data-cat]').forEach(row => {
+    row.style.display = (cat === 'ทั้งหมด' || row.dataset.cat === cat) ? '' : 'none';
+  });
+}
+
 function downloadImportTemplate() {
   _loadXLSX(() => {
     const wb = XLSX.utils.book_new();
@@ -1750,6 +1848,7 @@ async function quickDel(id, name) {
 async function renderStoreSettings(c) {
   const r = await api('GET', '/api/settings');
   const s = r.ok ? r.data : {};
+  _promoLibLoad(s); // โหลด library รูปโฆษณา
   // หา email ของตัวเอง
   const meR = await api('GET', '/api/me');
   const myEmail = meR.ok ? (meR.data.email||'') : '';
@@ -1815,23 +1914,69 @@ async function renderStoreSettings(c) {
         </div>
         <div style="font-size:12px;color:#2e7d32;margin-bottom:10px;">วาง link TikTok หรือ YouTube — จะแสดงเป็น carousel ในหน้าร้าน</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
-          <input class="fi" id="st-tiktok1" value="${s.tiktok_v1||''}" placeholder="คลิปที่ 1 — TikTok หรือ YouTube" onblur="resolveTikTok(this)">
-          <input class="fi" id="st-tiktok2" value="${s.tiktok_v2||''}" placeholder="คลิปที่ 2 — TikTok หรือ YouTube" onblur="resolveTikTok(this)">
-          <input class="fi" id="st-tiktok3" value="${s.tiktok_v3||''}" placeholder="คลิปที่ 3 — TikTok หรือ YouTube" onblur="resolveTikTok(this)">
+          ${[1,2,3].map(n => {
+            const hidden = s[`video${n}_hidden`];
+            return `<div style="display:flex;gap:6px;align-items:center;">
+              <input class="fi" id="st-tiktok${n}" value="${s[`tiktok_v${n}`]||''}" placeholder="คลิปที่ ${n} — TikTok หรือ YouTube" onblur="resolveTikTok(this)" style="flex:1;${hidden?'opacity:0.45;':''}" >
+              <button id="vcb-${n}" onclick="_toggleVideoClip(${n})" style="flex-shrink:0;padding:5px 10px;border-radius:8px;border:1px solid #ccc;font-size:12px;font-weight:700;cursor:pointer;background:${hidden?'#fdecea':'#e8f5e9'};color:${hidden?'#c62828':'#2e7d32'};">${hidden?'🙈':'👁️'}</button>
+            </div>`;
+          }).join('')}
         </div>
         <div id="tiktok-status" style="font-size:12px;color:#2e7d32;margin-top:4px;"></div>
       </div>
       <div class="fg" style="background:#fce4ec;border-radius:10px;padding:12px;">
         <label style="font-size:14px;font-weight:700;">🎉 รูปโฆษณา Popup</label>
         <div style="font-size:12px;color:#880e4f;margin-bottom:10px;">แสดงเมื่อลูกค้าเปิดเว็บครั้งแรก — เว้นว่างถ้าไม่ต้องการ</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-          <label style="display:inline-flex;align-items:center;gap:6px;background:#c2185b;color:#fff;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;">
-            📷 เลือกรูป
-            <input type="file" id="st-promo-file" accept="image/*" style="display:none" onchange="uploadPromo()">
-          </label>
-          <input class="fi" id="st-promo" value="${s.promo_popup||''}" placeholder="หรือวาง URL รูปภาพ" style="flex:1;min-width:140px;" oninput="refreshPromoPreview(this.value, document.getElementById('promo-pos-hidden')?.value||'')">
+
+        <!-- Dropdown เลือกรูปโฆษณา -->
+        <div style="margin-bottom:10px;">
+          <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:5px;">เลือกรูปที่จะแสดง:</label>
+          <select id="promo-sel" onchange="_promoSelChange(this.value)"
+            style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid #e0c0c8;font-size:14px;font-weight:700;background:#fff;color:#333;cursor:pointer;">
+            <option value="">🚫 ไม่มี (ปิด popup)</option>
+            ${(()=>{
+              const lib = _promoLib || [];
+              return lib.map((item,i) => {
+                const sel = (s.promo_popup||'') === item.url ? 'selected' : '';
+                return `<option value="${item.url}" ${sel}>${item.name || '(ไม่มีชื่อ)'}</option>`;
+              }).join('');
+            })()}
+          </select>
         </div>
+
+        <input type="hidden" id="st-promo" value="${s.promo_popup||''}">
         <div id="st-promo-status" style="font-size:12px;color:#c2185b;margin-bottom:6px;"></div>
+
+        <!-- คลังรูป -->
+        <details style="margin-bottom:10px;">
+          <summary style="font-size:12px;font-weight:700;color:#c2185b;cursor:pointer;padding:6px 0;">📚 จัดการคลังรูปโฆษณา (${(_promoLib||[]).length} รูป)</summary>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;" id="promo-lib-list">
+            ${(()=>{
+              const lib = _promoLib || [];
+              return lib.map((item,i) => `
+                <div style="display:flex;gap:7px;align-items:center;background:#fff;border:1px solid #eee;border-radius:8px;padding:7px;">
+                  <img src="${item.url}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">
+                  <span style="flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name||'(ไม่มีชื่อ)'}</span>
+                  <button onclick="_promoLibDelete(${i})" style="background:#fdecea;border:none;border-radius:6px;padding:4px 9px;color:#c62828;font-size:12px;cursor:pointer;flex-shrink:0;">🗑️</button>
+                </div>`).join('') || '<div style="font-size:12px;color:#aaa;padding:8px 0;">ยังไม่มีรูปในคลัง</div>';
+            })()}
+          </div>
+
+          <!-- เพิ่มรูปใหม่ -->
+          <div style="margin-top:10px;background:#f5eaea;border-radius:8px;padding:10px;">
+            <div style="font-size:12px;font-weight:700;color:#880e4f;margin-bottom:7px;">➕ เพิ่มรูปใหม่</div>
+            <input class="fi" id="promo-new-name" placeholder="ตั้งชื่อรูป เช่น โปรปีใหม่" style="margin-bottom:6px;font-size:13px;">
+            <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;">
+              <label style="display:inline-flex;align-items:center;gap:5px;background:#c2185b;color:#fff;padding:7px 13px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;">
+                📷 อัพโหลด
+                <input type="file" id="promo-new-file" accept="image/*" style="display:none" onchange="uploadPromoNew(this)">
+              </label>
+              <input class="fi" id="promo-new-url" placeholder="หรือวาง URL รูป" style="flex:1;min-width:120px;font-size:12px;">
+              <button onclick="_promoLibAdd()" style="background:#1a6b2f;color:#fff;border:none;border-radius:7px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;">เพิ่ม</button>
+            </div>
+            <div id="promo-new-status" style="font-size:12px;color:#c2185b;margin-top:4px;"></div>
+          </div>
+        </details>
 
         <div id="promo-prev-wrap" style="display:${s.promo_popup?'block':'none'};">
           <div style="font-size:12px;font-weight:700;color:#555;margin-bottom:7px;">เลือกทรง Popup:</div>
@@ -1874,11 +2019,6 @@ async function renderStoreSettings(c) {
         </div>
         <input type="hidden" id="promo-pos-hidden" value="${s.promo_pos||'0 0 1'}">
         <input type="hidden" id="promo-shape-hidden" value="${s.promo_shape||'square'}">
-      </div>
-      <div class="fg" style="background:#fff3cd;border-radius:10px;padding:12px;">
-        <label style="font-size:14px;font-weight:700;">📧 Email ของคุณ (สำหรับรีเซ็ตรหัส)</label>
-        <input class="fi" id="st-email" value="${myEmail}" placeholder="email@gmail.com" style="margin-top:6px;">
-        <div style="font-size:12px;color:#856404;margin-top:4px;">⚠️ ถ้าไม่มี email จะลืมรหัสตลอดกาล!</div>
       </div>
       <div id="st-err" class="err"></div>
       <button class="btn btn-g" style="font-size:15px;padding:13px;" onclick="saveStoreSettings(${myId})">💾 บันทึก</button>
@@ -1924,6 +2064,7 @@ async function saveStoreSettings(myId) {
     hours:        document.getElementById('st-hours')?.value.trim()  || '',
     announcement: document.getElementById('st-ann')?.value.trim()   || '',
     promo_popup:  document.getElementById('st-promo')?.value.trim() || '',
+    promo_library: JSON.stringify(_promoLib || []),
     promo_pos:    document.getElementById('promo-pos-hidden')?.value || '0 0 1',
     promo_shape:  document.getElementById('promo-shape-hidden')?.value || 'square',
     promo_width:  document.getElementById('promo-w-sl')?.value || '440',
@@ -2250,7 +2391,27 @@ async function init() {
   }
 }
 // ── CART ──────────────────────────────────────────────────────────────
-let cart = {}; // { id: { product, qty } }
+
+function _saveCart() {
+  try {
+    // save only ids+qty (product data reloaded from products array on restore)
+    const slim = {};
+    Object.entries(cart).forEach(([id, v]) => { slim[id] = v.qty; });
+    localStorage.setItem('shop_cart', JSON.stringify(slim));
+  } catch(e) {}
+}
+
+function _restoreCart() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('shop_cart') || '{}');
+    Object.entries(saved).forEach(([id, qty]) => {
+      const p = products.find(x => x.id == id);
+      if (p && qty > 0) cart[id] = { product: p, qty };
+    });
+    _updateCartFloat();
+    Object.keys(cart).forEach(id => _updateCartBtn(Number(id)));
+  } catch(e) {}
+}
 
 function addToCart(id) {
   const p = products.find(x => x.id === id);
@@ -2259,6 +2420,7 @@ function addToCart(id) {
   else cart[id] = { product: p, qty: 1 };
   _updateCartBtn(id);
   _updateCartFloat();
+  _saveCart();
   toast(`🛒 เพิ่ม "${p.name}" แล้ว`);
 }
 
@@ -2266,6 +2428,7 @@ function _removeFromCart(id) {
   delete cart[id];
   _updateCartBtn(id);
   _updateCartFloat();
+  _saveCart();
   renderCartContent();
 }
 
@@ -2273,6 +2436,7 @@ function _adjustQty(id, delta) {
   if (!cart[id]) return;
   cart[id].qty = Math.max(1, cart[id].qty + delta);
   _updateCartFloat();
+  _saveCart();
   renderCartContent();
 }
 
@@ -2342,22 +2506,93 @@ function renderCartContent() {
 function _clearCart() {
   if (!confirm('ล้างตะกร้าทั้งหมด?')) return;
   cart = {};
+  _saveCart();
   _updateCartFloat();
   renderCartContent();
   products.forEach(p => _updateCartBtn(p.id));
+}
+
+function _genOrderId() {
+  const now = new Date();
+  const d = now.toLocaleDateString('en-GB',{year:'2-digit',month:'2-digit',day:'2-digit'}).replace(/\//g,'');
+  const seq = String((parseInt(localStorage.getItem('order_seq')||'0') + 1) % 1000).padStart(3,'0');
+  localStorage.setItem('order_seq', seq);
+  return `#${d}-${seq}`;
+}
+
+// ── PROMO LIBRARY ────────────────────────────────────────────────────
+let _promoLib = []; // [{name, url}, ...]
+
+function _promoLibLoad(settings) {
+  try { _promoLib = JSON.parse(settings.promo_library || '[]'); } catch(e) { _promoLib = []; }
+}
+
+function _promoSelChange(url) {
+  document.getElementById('st-promo').value = url;
+  const wrap = document.getElementById('promo-prev-wrap');
+  if (wrap) wrap.style.display = url ? 'block' : 'none';
+  if (url) refreshPromoPreview(url, document.getElementById('promo-pos-hidden')?.value||'');
+}
+
+function _promoLibAdd() {
+  const name = document.getElementById('promo-new-name')?.value.trim();
+  const url  = document.getElementById('promo-new-url')?.value.trim();
+  if (!name) { toast('❌ ตั้งชื่อก่อนนะ'); return; }
+  if (!url)  { toast('❌ ใส่ URL หรืออัพโหลดรูปก่อน'); return; }
+  _promoLib.push({ name, url });
+  toast('✅ เพิ่ม "' + name + '" แล้ว');
+  document.getElementById('promo-new-name').value = '';
+  document.getElementById('promo-new-url').value = '';
+  _promoLibRefreshUI();
+}
+
+function _promoLibDelete(i) {
+  if (!confirm('ลบ "' + (_promoLib[i]?.name||'รูปนี้') + '" ออกจากคลัง?')) return;
+  _promoLib.splice(i, 1);
+  _promoLibRefreshUI();
+}
+
+function _promoLibRefreshUI() {
+  // refresh the library list
+  const list = document.getElementById('promo-lib-list');
+  if (list) {
+    list.innerHTML = _promoLib.length ? _promoLib.map((item,i) => `
+      <div style="display:flex;gap:7px;align-items:center;background:#fff;border:1px solid #eee;border-radius:8px;padding:7px;">
+        <img src="${item.url}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">
+        <span style="flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name||'(ไม่มีชื่อ)'}</span>
+        <button onclick="_promoLibDelete(${i})" style="background:#fdecea;border:none;border-radius:6px;padding:4px 9px;color:#c62828;font-size:12px;cursor:pointer;flex-shrink:0;">🗑️</button>
+      </div>`).join('') : '<div style="font-size:12px;color:#aaa;padding:8px 0;">ยังไม่มีรูปในคลัง</div>';
+  }
+  // refresh dropdown
+  const sel = document.getElementById('promo-sel');
+  if (sel) {
+    const cur = document.getElementById('st-promo')?.value || '';
+    sel.innerHTML = '<option value="">🚫 ไม่มี (ปิด popup)</option>' +
+      _promoLib.map(item => `<option value="${item.url}"${cur===item.url?' selected':''}>${item.name||'(ไม่มีชื่อ)'}</option>`).join('');
+  }
+}
+
+async function uploadPromoNew(input) {
+  if (!input.files[0]) return;
+  const statusEl = document.getElementById('promo-new-status');
+  const urlEl = document.getElementById('promo-new-url');
+  if (statusEl) statusEl.textContent = '⏳ กำลังอัพโหลด...';
+  await doUpload(input.files[0], statusEl, null, urlEl);
 }
 
 function sendOrderViaLine() {
   const items = Object.values(cart);
   if (!items.length) return;
   const subtotal = items.reduce((s, x) => s + x.product.price * x.qty, 0);
+  const orderId = _genOrderId();
   const name = storeSettings.store_name || 'ร้านข้าวสาร คลองขวาง';
-  let msg = `🛒 รายการสั่งซื้อ\n${name}\n${'─'.repeat(22)}\n`;
+  let msg = `🛒 ออเดอร์ ${orderId}\n${name}\n${'─'.repeat(24)}\n`;
   items.forEach(x => {
     msg += `• ${x.product.name} × ${x.qty}  =  ฿${Number(x.product.price * x.qty).toLocaleString()}\n`;
   });
-  msg += `${'─'.repeat(22)}\n💰 รวม ฿${Number(subtotal).toLocaleString()} (${items.reduce((s,x)=>s+x.qty,0)} รายการ)`;
-  window.open(`https://line.me/R/msg/text/?${encodeURIComponent(msg)}`, '_blank');
+  msg += `${'─'.repeat(24)}\n💰 รวม ฿${Number(subtotal).toLocaleString()} (${items.reduce((s,x)=>s+x.qty,0)} รายการ)\n📦 กรุณาแจ้งที่อยู่จัดส่งด้วยนะคะ 🙏`;
+  const lineId = storeSettings.line_id || LINE;
+  window.open(`https://line.me/R/oaMessage/${encodeURIComponent(lineId)}/?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
 init();
@@ -2373,7 +2608,6 @@ function fixSearchBarTop() {
   sb.style.top = h + 'px';
 }
 window.addEventListener('resize', fixSearchBarTop);
-// Run after fonts/images settle
 setTimeout(fixSearchBarTop, 300);
 setTimeout(fixSearchBarTop, 1000);
 </script>

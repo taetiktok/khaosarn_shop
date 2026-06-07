@@ -341,6 +341,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except FileNotFoundError: self.send_error(404)
 
     def _get_products(self):
+        u = self._user()
+        is_admin = bool(u)
         with get_db() as db:
             rows = db.execute(
                 "SELECT id,name,cat,price,unit,desc_text,emoji,img_url,img_pos,"
@@ -348,7 +350,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "COALESCE(bulk_qty,0) as bulk_qty,COALESCE(visible,1) as visible,"
                 "COALESCE(featured,0) as featured,COALESCE(cost_price,0) as cost_price FROM products ORDER BY featured DESC,cat,name,price"
             ).fetchall()
-        self._json([dict(r) for r in rows])
+        result = []
+        for r in rows:
+            row = dict(r)
+            if not is_admin:
+                row.pop('cost_price', None)
+            result.append(row)
+        self._json(result)
 
     def _get_me(self):
         u = self._user(); self._json(u if u else {'error':'unauthorized'}, 200 if u else 401)
