@@ -2869,8 +2869,10 @@ function sendOrderViaLine() {
     msg += `• ${x.product.name} × ${x.qty}  =  ฿${Number(x.product.price * x.qty).toLocaleString()}\n`;
   });
   msg += `${'─'.repeat(24)}\n💰 รวม ฿${Number(subtotal).toLocaleString()} (${items.reduce((s,x)=>s+x.qty,0)} รายการ)\n📦 กรุณาแจ้งที่อยู่จัดส่งด้วยนะคะ 🙏`;
-  const lineId = storeSettings.line_id || LINE;
-  window.open(`https://line.me/R/oaMessage/${encodeURIComponent(lineId)}/?text=${encodeURIComponent(msg)}`, '_blank');
+  const lineId = (storeSettings.line_id || LINE).trim();
+  // line.me/R/ti/p/@OA_ID works for both OA and personal; don't encode @ in path
+  // Do NOT encode @ in LINE ID path — keep raw, only encode text param
+  window.open(`https://line.me/R/ti/p/${lineIdPath}?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
 init();
