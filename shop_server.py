@@ -182,7 +182,7 @@ def _now(): return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 def _create_session(uid, remember=False):
     tok = secrets.token_urlsafe(40)
-    exp = (datetime.now() + timedelta(days=30 if remember else 1)).strftime('%Y-%m-%d %H:%M:%S')
+    exp = (datetime.now() + timedelta(days=30 if remember else 7)).strftime('%Y-%m-%d %H:%M:%S')
     with _db_lock, get_db() as db:
         db.execute("DELETE FROM sessions WHERE user_id=? OR expires_at < ?", (uid, _now()))
         db.execute("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)", (tok, uid, exp))
