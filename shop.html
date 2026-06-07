@@ -842,13 +842,37 @@ function shareProduct(name, price, unit) {
 
 function cardHtml(p, lineId, phone1) {
   return `<div class="card${!p.in_stock?' soldout':''}">
-    <div class="card-img" ${p.img_url?`onclick="openLightbox('${p.img_url}')" style="cursor:zoom-in"`:''}>${p.img_url
-      ? `<img src="${p.img_url}" alt="${p.name}" style="object-position:50% 50%;transform:${imgTransform(parseImgPos(p.img_pos).px,parseImgPos(p.img_pos).py,parseImgPos(p.img_pos).zoom)};transform-origin:center;" onerror="this.parentElement.innerHTML='${p.emoji||'🛒'}'"/>`
-      : p.emoji||'🛒'}
-      ${!p.in_stock?`<div class="sold-out-badge">หมด</div>`:''}
-      ${p.featured?`<div style="position:absolute;top:7px;left:7px;font-size:16px;text-shadow:0 1px 4px rgba(0,0,0,.3)">⭐</div>`:''}
-      ${session&&!p.visible?`<div class="hidden-badge">🙈ซ่อน</div>`:''}
-    </div>
+    ${(()=>{
+      let rawImgs = [];
+      try { rawImgs = JSON.parse(p.extra_images||'[]'); } catch(e){}
+      // rawImgs may be strings or {url,pos} objects
+      const extraImgItems = rawImgs.map(x => typeof x==='string' ? {url:x,pos:'0 0 1'} : x);
+      // main image always first, with its own pos from img_pos
+      const mainPos = p.img_pos || '50% 50% / 1';
+      const mainItem = p.img_url ? {url:p.img_url, pos:mainPos, isMain:true} : null;
+      const allItems = mainItem ? [mainItem, ...extraImgItems.filter(x=>x.url&&x.url!==p.img_url)] : extraImgItems.filter(x=>x.url);
+      if (!allItems.length) return `<div class="card-img">${p.emoji||'🛒'}${!p.in_stock?'<div class="sold-out-badge">หมด</div>':''}${p.featured?'<div style="position:absolute;top:7px;left:7px;font-size:16px;">⭐</div>':''}${session&&!p.visible?'<div class="hidden-badge">🙈ซ่อน</div>':''}</div>`;
+      const mainImg = allItems[0].url;
+      const transform = imgTransform(parseImgPos(p.img_pos).px,parseImgPos(p.img_pos).py,parseImgPos(p.img_pos).zoom);
+      const allImgUrls = allItems.map(x=>x.url);
+      if (allItems.length === 1) return `<div class="card-img" onclick="openLightbox('${mainImg}')" style="cursor:zoom-in"><img src="${mainImg}" alt="${p.name}" style="object-position:50% 50%;transform:${transform};transform-origin:center;" onerror="this.parentElement.innerHTML='${p.emoji||'🛒'}'"/>${!p.in_stock?'<div class="sold-out-badge">หมด</div>':''}${p.featured?'<div style="position:absolute;top:7px;left:7px;font-size:16px;">⭐</div>':''}${session&&!p.visible?'<div class="hidden-badge">🙈ซ่อน</div>':''}</div>`;
+      // multiple images — carousel (element-relative, no ID conflict)
+      const allImgs = allImgUrls;
+      return `<div class="card-img" style="overflow:hidden;padding:0;cursor:default;" data-slide-idx="0" onclick="openGallery(this,${JSON.stringify(allImgUrls)})">
+        <!-- slide track -->
+        <div data-track style="position:absolute;inset:0;display:flex;transition:transform .28s ease;will-change:transform;">
+          ${allItems.map((item,i)=>{ const t=item.isMain?transform:(()=>{const pp=_parsePos(item.pos||'0 0 1');return imgTransform(pp[0],pp[1],pp[2]);})(); return `<div style="flex:0 0 100%;height:100%;overflow:hidden;"><img src="${item.url}" style="width:100%;height:100%;object-fit:cover;transform:${t};transform-origin:center;" onerror="this.style.opacity='.2'"></div>`; }).join('')}
+        </div>
+        <!-- dots -->
+        <div data-dots style="position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:5px;z-index:3;">
+          ${allItems.map((_,i)=>`<div style="width:${i===0?'18':'6'}px;height:6px;border-radius:3px;background:${i===0?'#fff':'rgba(255,255,255,.55)'};transition:.25s;pointer-events:none;"></div>`).join('')}
+        </div>
+        <!-- arrows -->
+        <button onclick="event.stopPropagation();_cardSlide(this.closest('.card-img'),-1)" style="position:absolute;left:5px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.38);color:#fff;border:none;border-radius:50%;width:26px;height:26px;font-size:16px;cursor:pointer;z-index:3;line-height:1;">‹</button>
+        <button onclick="event.stopPropagation();_cardSlide(this.closest('.card-img'),1)" style="position:absolute;right:5px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.38);color:#fff;border:none;border-radius:50%;width:26px;height:26px;font-size:16px;cursor:pointer;z-index:3;line-height:1;">›</button>
+        ${!p.in_stock?'<div class="sold-out-badge">หมด</div>':''}${p.featured?'<div style="position:absolute;top:7px;left:7px;font-size:16px;">⭐</div>':''}${session&&!p.visible?'<div class="hidden-badge">🙈ซ่อน</div>':''}
+      </div>`;
+    })()}
     <div class="card-body">
       <div class="card-name">${p.name}</div>
       ${p.desc_text?`<div class="card-desc">${p.desc_text}</div>`:''}
@@ -862,6 +886,191 @@ function cardHtml(p, lineId, phone1) {
       : `<div style="margin-top:7px;text-align:center;color:#e74c3c;font-size:12px;font-weight:700;">⚠️ สินค้าหมดชั่วคราว</div>`}
     </div>
   </div>`;
+}
+
+// ── EXTRA PRODUCT IMAGES ─────────────────────────────────────────────
+function _getExtraImgs() {
+  try { return JSON.parse(document.getElementById('pf-extra-images')?.value || '[]'); } catch(e) { return []; }
+}
+function _extraUrl(item) { return typeof item==='string' ? item : (item?.url||''); }
+function _extraPos(item) { return typeof item==='string' ? '0 0 1' : (item?.pos||'0 0 1'); }
+function _parsePos(posStr) {
+  const p = (posStr||'0 0 1').split(' ').map(Number);
+  return [p[0]||0, p[1]||0, p[2]||1];
+}
+function _setExtraImgs(arr) {
+  const el = document.getElementById('pf-extra-images');
+  if (el) el.value = JSON.stringify(arr);
+  _renderExtraThumbs(arr);
+}
+function _renderExtraThumbs(imgs) {
+  const wrap = document.getElementById('pf-extra-imgs');
+  if (!wrap) return;
+  wrap.innerHTML = imgs.length ? imgs.map((url,i) => `
+    <div style="position:relative;width:80px;border-radius:8px;border:1.5px solid #ddd;overflow:hidden;background:#f9f9f9;">
+      <div style="width:80px;height:80px;overflow:hidden;cursor:pointer;" onclick="openImgGallery(${JSON.stringify(imgs).replace(/"/g,'&quot;')},${i})">
+        <img src="${url}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.opacity='.3'">
+      </div>
+      <div style="display:flex;gap:2px;padding:3px;">
+        <button type="button" onclick="_editExtraImg(${i})" style="flex:1;background:#e8f5e9;border:none;border-radius:4px;font-size:10px;padding:2px 0;cursor:pointer;font-weight:700;color:#2e7d32;">✏️</button>
+        <button type="button" onclick="_removeExtraImg(${i})" style="flex:1;background:#fdecea;border:none;border-radius:4px;font-size:10px;padding:2px 0;cursor:pointer;font-weight:700;color:#c62828;">🗑️</button>
+      </div>
+    </div>`).join('') : '<div style="font-size:12px;color:#bbb;padding:4px 0;">ยังไม่มีรูปเพิ่มเติม</div>';
+}
+
+function _editExtraImg(i) {
+  const imgs = _getExtraImgs();
+  const url = imgs[i];
+  if (!url) return;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;';
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:18px;max-width:340px;width:92%;box-shadow:0 8px 40px rgba(0,0,0,.4);">
+      <div style="font-weight:700;margin-bottom:10px;">✏️ แก้ไขรูปเพิ่มเติม ${i+1}</div>
+      <div style="font-size:12px;color:#888;margin-bottom:8px;">🖐 ลากรูปเพื่อจัดตำแหน่ง · Slider ซูม</div>
+      <div id="exi-box" style="position:relative;overflow:hidden;border-radius:10px;width:100%;aspect-ratio:1;cursor:grab;border:2px dashed #1a6b2f;background:#f5efe3;touch-action:none;user-select:none;"
+        onmousedown="event.preventDefault();_exiDragStart(event.clientX,event.clientY)"
+        ontouchstart="event.preventDefault();_exiDragStart(event.touches[0].clientX,event.touches[0].clientY)">
+        <img id="exi-img" src="${url}" style="width:100%;height:100%;object-fit:cover;transform-origin:center;pointer-events:none;display:block;">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+        <span style="font-size:12px;color:#555;font-weight:600;">🔍 ซูม</span>
+        <input type="range" id="exi-zoom" min="100" max="300" step="5" value="100" style="flex:1;" oninput="_exiZoom(this.value)">
+        <span id="exi-zoom-lb" style="font-size:12px;font-weight:700;min-width:36px;">100%</span>
+        <button onclick="_exiReset()" style="background:#f0f0f0;border:none;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;">รีเซ็ต</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button onclick="document.getElementById('exi-ov').remove()" style="flex:1;padding:10px;background:#f0f0f0;border:none;border-radius:8px;font-weight:700;cursor:pointer;">ยกเลิก</button>
+        <button onclick="_exiSave(${i})" style="flex:1;padding:10px;background:#1a6b2f;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">💾 บันทึก</button>
+      </div>
+    </div>`;
+  ov.id = 'exi-ov';
+  ov.onclick = e => { if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  window._exiState = { px:0, py:0, zoom:1, drag:null };
+  _exiApply();
+}
+function _exiApply() {
+  const img = document.getElementById('exi-img');
+  if (img) img.style.transform = imgTransform(_exiState.px, _exiState.py, _exiState.zoom);
+}
+function _exiDragStart(cx,cy) {
+  const box = document.getElementById('exi-box');
+  if (!box) return;
+  _exiState.drag = {cx,cy,px:_exiState.px,py:_exiState.py};
+  const onMove = e => {
+    if (!_exiState.drag) return;
+    const mcx = e.touches?e.touches[0].clientX:e.clientX;
+    const mcy = e.touches?e.touches[0].clientY:e.clientY;
+    const z = _exiState.zoom;
+    const cap = z>1?(z-1)/z*50:0;
+    _exiState.px = Math.max(-cap,Math.min(cap,_exiState.drag.px+(mcx-_exiState.drag.cx)/box.offsetWidth*100/z));
+    _exiState.py = Math.max(-cap,Math.min(cap,_exiState.drag.py+(mcy-_exiState.drag.cy)/box.offsetHeight*100/z));
+    _exiApply();
+  };
+  const onUp = () => { _exiState.drag=null; document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); document.removeEventListener('touchmove',onMove); document.removeEventListener('touchend',onUp); };
+  document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+  document.addEventListener('touchmove',onMove,{passive:false}); document.addEventListener('touchend',onUp);
+}
+function _exiZoom(val) {
+  _exiState.zoom = val/100;
+  document.getElementById('exi-zoom-lb').textContent = val+'%';
+  const cap = _exiState.zoom>1?(_exiState.zoom-1)/_exiState.zoom*50:0;
+  _exiState.px = Math.max(-cap,Math.min(cap,_exiState.px));
+  _exiState.py = Math.max(-cap,Math.min(cap,_exiState.py));
+  _exiApply();
+}
+function _exiReset() {
+  _exiState = {px:0,py:0,zoom:1,drag:null};
+  const sl = document.getElementById('exi-zoom'); if(sl) sl.value=100;
+  const lb = document.getElementById('exi-zoom-lb'); if(lb) lb.textContent='100%';
+  _exiApply();
+}
+function _exiSave(i) {
+  // store pos as "px py zoom" in extra_images as object {url, pos}
+  const imgs = _getExtraImgs();
+  if (typeof imgs[i] === 'string') {
+    imgs[i] = { url: imgs[i], pos: fmtImgPos(_exiState.px, _exiState.py, _exiState.zoom) };
+  } else {
+    imgs[i].pos = fmtImgPos(_exiState.px, _exiState.py, _exiState.zoom);
+  }
+  _setExtraImgs(imgs);
+  document.getElementById('exi-ov')?.remove();
+  toast('✅ บันทึกตำแหน่งรูปแล้ว');
+}
+function _removeExtraImg(i) {
+  const arr = _getExtraImgs(); arr.splice(i, 1); _setExtraImgs(arr);
+}
+function _addExtraUrl() {
+  const url = document.getElementById('pf-extra-url')?.value.trim();
+  if (!url) return;
+  const arr = _getExtraImgs(); arr.push(url); _setExtraImgs(arr);
+  document.getElementById('pf-extra-url').value = '';
+}
+async function addExtraImgs(input) {
+  if (!input.files.length) return;
+  const statusEl = document.getElementById('pf-extra-status');
+  const arr = _getExtraImgs();
+  for (const file of input.files) {
+    if (statusEl) statusEl.textContent = `⏳ กำลังอัพโหลด ${file.name}...`;
+    const tmpEl = document.createElement('input');
+    await doUpload(file, statusEl, null, tmpEl);
+    if (tmpEl.value) arr.push(tmpEl.value);
+  }
+  _setExtraImgs(arr);
+  if (statusEl) statusEl.textContent = `✅ อัพโหลดสำเร็จ ${input.files.length} รูป`;
+  input.value = '';
+}
+
+// ── PRODUCT IMAGE CAROUSEL ───────────────────────────────────────────
+let _cardSlideIdx = {}; // cid -> current index
+function _cardSlide(cardImg, dir) {
+  const track = cardImg.querySelector('[data-track]');
+  const dotsEl = cardImg.querySelector('[data-dots]');
+  if (!track) return;
+  const total = track.children.length;
+  let idx = parseInt(cardImg.dataset.slideIdx || '0');
+  idx = (idx + dir + total) % total;
+  cardImg.dataset.slideIdx = idx;
+  track.style.transform = `translateX(-${idx * 100}%)`;
+  const dots = dotsEl ? dotsEl.querySelectorAll('div') : [];
+  dots.forEach((d,i) => {
+    d.style.width = i===idx ? '18px' : '6px';
+    d.style.background = i===idx ? '#fff' : 'rgba(255,255,255,0.55)';
+  });
+}
+
+// Gallery lightbox — show all images, swipeable
+function openGallery(cardImg, imgs) {
+  // if clicked on a button child, skip
+  if (!imgs || !imgs.length) return;
+  const idx = parseInt(cardImg.dataset.slideIdx || '0');
+  openImgGallery(imgs, idx);
+}
+function openImgGallery(imgs, startIdx=0) {
+  let cur = startIdx;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;align-items:center;justify-content:center;touch-action:none;';
+  const render = () => {
+    ov.innerHTML = `
+      <button onclick="this.closest('div').remove()" style="position:absolute;top:14px;right:18px;background:none;border:none;color:#fff;font-size:28px;cursor:pointer;z-index:2;">✕</button>
+      <button onclick="event.stopPropagation();_galPrev()" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:40px;height:40px;font-size:22px;cursor:pointer;z-index:2;" ${imgs.length<2?'hidden':''}>‹</button>
+      <img src="${imgs[cur]}" style="max-width:94vw;max-height:88vh;border-radius:10px;object-fit:contain;box-shadow:0 4px 32px rgba(0,0,0,.5);" onerror="this.alt='โหลดไม่ได้'">
+      <button onclick="event.stopPropagation();_galNext()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:40px;height:40px;font-size:22px;cursor:pointer;z-index:2;" ${imgs.length<2?'hidden':''}>›</button>
+      <div style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px;">
+        ${imgs.map((_,i)=>`<div style="width:${i===cur?'20':'7'}px;height:7px;border-radius:4px;background:${i===cur?'#fff':'rgba(255,255,255,.4)'};transition:.2s;"></div>`).join('')}
+      </div>
+      <div style="position:absolute;bottom:40px;color:rgba(255,255,255,.5);font-size:12px;">${cur+1} / ${imgs.length}</div>`;
+    ov.querySelector('img').onclick = e => e.stopPropagation();
+  };
+  window._galPrev = () => { cur = (cur - 1 + imgs.length) % imgs.length; render(); };
+  window._galNext = () => { cur = (cur + 1) % imgs.length; render(); };
+  ov.onclick = () => ov.remove();
+  // keyboard
+  const onKey = e => { if(e.key==='ArrowLeft') _galPrev(); else if(e.key==='ArrowRight') _galNext(); else if(e.key==='Escape') { ov.remove(); document.removeEventListener('keydown',onKey); }};
+  document.addEventListener('keydown', onKey);
+  render();
+  document.body.appendChild(ov);
 }
 
 function render() {
@@ -1344,10 +1553,38 @@ function pfFields(p={}, editorOnly=false) {
       </div>
       <input type="hidden" id="pf-img-pos" value="${p.img_pos||'50% 50% 1'}">
     </div>
+
+    <!-- รูปเพิ่มเติม (carousel) -->
+    <div style="${sCard}margin-top:0;">
+      <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:8px;">🖼️ รูปเพิ่มเติม (สำหรับ carousel)</div>
+      <div style="font-size:11px;color:#888;margin-bottom:8px;">รูปแรกคือรูปหลักด้านบน — เพิ่มรูปเสริมที่นี่เพื่อให้ลูกค้า swipe ดูได้</div>
+      <div id="pf-extra-imgs" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        ${(()=>{
+          let imgs = [];
+          try { imgs = JSON.parse(p.extra_images||'[]'); } catch(e){}
+          return imgs.map((url,i) => `
+            <div style="position:relative;width:70px;height:70px;border-radius:8px;overflow:hidden;border:1.5px solid #ddd;">
+              <img src="${url}" style="width:100%;height:100%;object-fit:cover;">
+              <button type="button" onclick="_removeExtraImg(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+            </div>`).join('') || '<div style="font-size:12px;color:#bbb;">ยังไม่มีรูปเพิ่มเติม</div>';
+        })()}
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+        <label style="display:inline-flex;align-items:center;gap:5px;background:#1a6b2f;color:#fff;padding:7px 13px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;">
+          📷 อัพโหลดรูปเพิ่ม
+          <input type="file" id="pf-extra-file" accept="image/*" multiple style="display:none" onchange="addExtraImgs(this)">
+        </label>
+        <input class="fi" id="pf-extra-url" placeholder="หรือวาง URL แล้วกด +" style="flex:1;min-width:140px;font-size:12px;">
+        <button type="button" onclick="_addExtraUrl()" style="background:#1a6b2f;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;">+</button>
+      </div>
+      <div id="pf-extra-status" style="font-size:12px;color:#2e7d32;margin-top:4px;"></div>
+      <input type="hidden" id="pf-extra-images" value="${p.extra_images||'[]'}">
+    </div>
   </div>` : `
   <input type="hidden" id="pf-emoji" value="${p.emoji||'🛒'}">
   <input type="hidden" id="pf-img" value="${p.img_url||''}">
-  <input type="hidden" id="pf-img-pos" value="${p.img_pos||'50% 50%'}">`}`;
+  <input type="hidden" id="pf-img-pos" value="${p.img_pos||'50% 50%'}">
+  <input type="hidden" id="pf-extra-images" value="${p.extra_images||'[]'}">`}`;
 }
 
 function readFileAsBase64(file) {
@@ -1402,6 +1639,7 @@ async function saveProduct() {
     emoji:    document.getElementById('pf-emoji').value.trim() || '🛒',
     img_url:    document.getElementById('pf-img').value.trim(),
     img_pos:    document.getElementById('pf-img-pos')?.value || '50% 50%',
+    extra_images: document.getElementById('pf-extra-images')?.value || '[]',
     price_bulk:  parseFloat(document.getElementById('pf-bprice')?.value) || 0,
     bulk_qty:    parseInt(document.getElementById('pf-bqty')?.value)    || 0,
     cost_price:  parseFloat(document.getElementById('pf-cost')?.value)  || 0,

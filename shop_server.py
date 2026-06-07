@@ -131,6 +131,8 @@ def _init_sqlite():
         # migration: add cost_price if not exists
         try: db._conn.execute("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0")
         except: pass
+        try: db._conn.execute("ALTER TABLE products ADD COLUMN extra_images TEXT DEFAULT '[]'")
+        except: pass
         db.commit()
         _seed_if_empty(db)
 
@@ -147,6 +149,8 @@ def _init_pg():
         ]: db.execute(s)
         # migration: add cost_price if not exists
         try: db.execute("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0")
+        except: pass
+        try: db.execute("ALTER TABLE products ADD COLUMN extra_images TEXT DEFAULT '[]'")
         except: pass
         db.commit()
         _seed_if_empty(db)
@@ -348,7 +352,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "SELECT id,name,cat,price,unit,desc_text,emoji,img_url,img_pos,"
                 "COALESCE(in_stock,1) as in_stock,COALESCE(price_bulk,0) as price_bulk,"
                 "COALESCE(bulk_qty,0) as bulk_qty,COALESCE(visible,1) as visible,"
-                "COALESCE(featured,0) as featured,COALESCE(cost_price,0) as cost_price FROM products ORDER BY featured DESC,cat,name,price"
+                "COALESCE(featured,0) as featured,COALESCE(cost_price,0) as cost_price,"
+                "COALESCE(extra_images,'[]') as extra_images FROM products ORDER BY featured DESC,cat,name,price"
             ).fetchall()
         result = []
         for r in rows:
@@ -394,12 +399,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except: self._json({'error':'ข้อมูลไม่ครบ'},400); return
         with _db_lock, get_db() as db:
             nid = db.execute_insert(
-                "INSERT INTO products(name,cat,price,unit,desc_text,emoji,img_url,img_pos,in_stock,price_bulk,bulk_qty,cost_price)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO products(name,cat,price,unit,desc_text,emoji,img_url,img_pos,in_stock,price_bulk,bulk_qty,cost_price,extra_images)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (name,d.get('cat','ของชำ'),price,d.get('unit','ชิ้น'),d.get('desc_text',''),
                  d.get('emoji','🛒'),d.get('img_url',''),d.get('img_pos','50% 50%'),1,
                  float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0),
-                 float(d.get('cost_price',0) or 0)))
+                 float(d.get('cost_price',0) or 0),d.get('extra_images','[]')))
             db.commit()
         _audit(u['id'],u['username'],'ADD_PRODUCT',f"เพิ่ม:{name} ฿{price}",self._ip())
         self._json({'id':nid,'ok':True})
@@ -456,12 +461,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             now = _now()
             ex = dict(ex)
             db.execute(
-                "UPDATE products SET name=?,cat=?,price=?,unit=?,desc_text=?,emoji=?,img_url=?,img_pos=?,price_bulk=?,bulk_qty=?,cost_price=?,updated_at=? WHERE id=?",
+                "UPDATE products SET name=?,cat=?,price=?,unit=?,desc_text=?,emoji=?,img_url=?,img_pos=?,price_bulk=?,bulk_qty=?,cost_price=?,extra_images=?,updated_at=? WHERE id=?",
                 (d.get('name',ex['name']),d.get('cat',ex['cat']),float(d.get('price',ex['price'])),
                  d.get('unit',ex['unit']),d.get('desc_text',ex['desc_text']),d.get('emoji',ex['emoji']),
                  d.get('img_url',ex['img_url']),d.get('img_pos',ex.get('img_pos','50% 50%')),
                  float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0),
-                 float(d.get('cost_price',0) or 0),now,pid))
+                 float(d.get('cost_price',0) or 0),d.get('extra_images',ex.get('extra_images','[]')),now,pid))
             db.commit()
         _audit(u['id'],u['username'],'UPDATE_PRODUCT',f"#{pid}",self._ip()); self._json({'ok':True})
 
