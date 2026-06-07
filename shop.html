@@ -97,6 +97,7 @@ select.fi{cursor:pointer;}
 .prow .pprice{font-size:12px;font-weight:800;color:#c0392b;min-width:65px;text-align:right;}
 .ib{width:28px;height:28px;border-radius:6px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
 .ib-e{background:#e8f5e9;} .ib-d{background:#fdecea;}
+.ib-tog{width:auto;min-width:58px;padding:0 7px;font-size:11px;font-weight:700;}
 
 /* audit log */
 .alog{font-size:11px;}
@@ -221,6 +222,7 @@ select.fi{cursor:pointer;}
   .prow .pcat{font-size:10px;}
   .prow .pprice{min-width:unset;font-size:12px;}
   .ib{width:32px;height:32px;font-size:14px;}
+  .ib-tog{min-width:48px;font-size:10px;padding:0 5px;height:30px;}
 
   /* Audit log */
   .alog-row{grid-template-columns:1fr auto;gap:4px;font-size:10px;padding:6px 8px;}
@@ -860,6 +862,8 @@ function render() {
     </div>`).join('');
   // restore cart button states after re-render
   Object.keys(cart).forEach(id => _updateCartBtn(Number(id)));
+  // init carousel swipe after DOM updated
+  setTimeout(initVideoCarousel, 50);
 }
 
 // ── VIDEO SECTION (TikTok + YouTube carousel) ─────────────────────────
@@ -918,6 +922,18 @@ function videoCarouselGo(idx) {
 }
 function videoCarouselPrev() { videoCarouselGo(_videoIdx - 1); }
 function videoCarouselNext() { videoCarouselGo(_videoIdx + 1); }
+
+function initVideoCarousel() {
+  const track = document.getElementById('vc-track');
+  if (!track || track._swipeInit) return;
+  track._swipeInit = true;
+  let sx = 0;
+  track.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, {passive:true});
+  track.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 40) dx < 0 ? videoCarouselNext() : videoCarouselPrev();
+  });
+}
 
 function buildVideoSection() {
   const rawUrls = [
@@ -1083,31 +1099,27 @@ async function renderAdminProducts(c) {
   const isSA = session.role === 'superadmin';
   c.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-      ${isSA ? `<button class="btn btn-g" style="font-size:12px;" onclick="openAddProduct()">➕ เพิ่มสินค้าใหม่</button>` : ''}
+      <button class="btn btn-g" style="font-size:12px;" onclick="openAddProduct()">➕ เพิ่มสินค้าใหม่</button>
       <button class="btn btn-gh" style="font-size:12px;" onclick="printPriceList()">🖨️ พิมพ์ราคา</button>
-      ${isSA ? `
-        <button class="btn" style="font-size:12px;background:#e8f5e9;color:#1a6b2f;border:1.5px solid #2d9e4f;" onclick="resetAllStock()">✅ เปิดขายทั้งหมด</button>
-        <button class="btn" style="font-size:12px;background:#fff8e1;color:#f57f17;border:1.5px solid #fbc02d;" onclick="resetAllVisible()">👁️ แสดงทั้งหมด</button>
-      ` : ''}
+      <button class="btn" style="font-size:12px;background:#e8f5e9;color:#1a6b2f;border:1.5px solid #2d9e4f;" onclick="resetAllStock()">✅ เปิดขายทั้งหมด</button>
+      <button class="btn" style="font-size:12px;background:#fff8e1;color:#f57f17;border:1.5px solid #fbc02d;" onclick="resetAllVisible()">👁️ แสดงทั้งหมด</button>
     </div>
-    ${isSA ? '' : '<div style="font-size:12px;color:#2563eb;background:#dbeafe;padding:8px 12px;border-radius:8px;margin-bottom:10px;">✏️ Editor สามารถแก้ไขได้เฉพาะ ราคา และ รายละเอียด</div>'}
+    ${isSA ? '' : '<div style="font-size:12px;color:#2563eb;background:#dbeafe;padding:8px 12px;border-radius:8px;margin-bottom:10px;">✏️ Editor — แก้ไข เพิ่ม เปิด/ปิดขาย แสดง/ซ่อน แนะนำได้ทั้งหมด (ยกเว้นลบ)</div>'}
     <div class="plist">${r.data.map(p => `
       <div class="prow">
         <div style="font-size:20px;flex-shrink:0">${p.emoji||'🛒'}</div>
         <div class="pname">${p.name}<small>${p.desc_text||''}</small></div>
         <div class="pcat">${p.cat}</div>
         <div class="pprice">฿${Number(p.price).toLocaleString()}</div>
-        ${isSA ? `
-          <button class="ib" style="background:${p.in_stock?'#e8f5e9':'#fdecea'};min-width:60px;font-size:11px;font-weight:700;"
-            onclick="toggleStock(${p.id},this)" title="${p.in_stock?'กดเพื่อตั้งเป็นหมด':'กดเพื่อเปิดขาย'}">
-            ${p.in_stock?'✅ขาย':'❌หมด'}</button>
-          <button class="ib" style="background:${p.visible?'#e8f5e9':'#fffde7'};min-width:60px;font-size:11px;font-weight:700;"
-            onclick="toggleVisible(${p.id},this)" title="${p.visible?'กดเพื่อซ่อน':'กดเพื่อแสดง'}">
-            ${p.visible?'👁️แสดง':'🙈ซ่อน'}</button>
-          <button class="ib" style="background:${p.featured?'#fff8e1':'#fafafa'};min-width:60px;font-size:11px;font-weight:700;"
-            onclick="toggleFeatured(${p.id},this)" title="${p.featured?'ยกเลิกแนะนำ':'ตั้งเป็นสินค้าแนะนำ'}">
-            ${p.featured?'⭐แนะ':'☆แนะ'}</button>
-        ` : ''}
+        <button class="ib ib-tog" style="background:${p.in_stock?'#e8f5e9':'#fdecea'};"
+          onclick="toggleStock(${p.id},this)" title="${p.in_stock?'กดเพื่อตั้งเป็นหมด':'กดเพื่อเปิดขาย'}">
+          ${p.in_stock?'✅ขาย':'❌หมด'}</button>
+        <button class="ib ib-tog" style="background:${p.visible?'#e8f5e9':'#fffde7'};"
+          onclick="toggleVisible(${p.id},this)" title="${p.visible?'กดเพื่อซ่อน':'กดเพื่อแสดง'}">
+          ${p.visible?'👁️แสดง':'🙈ซ่อน'}</button>
+        <button class="ib ib-tog" style="background:${p.featured?'#fff8e1':'#fafafa'};"
+          onclick="toggleFeatured(${p.id},this)" title="${p.featured?'ยกเลิกแนะนำ':'ตั้งเป็นสินค้าแนะนำ'}">
+          ${p.featured?'⭐แนะ':'☆แนะ'}</button>
         <button class="ib ib-e" onclick="openEditProduct(${p.id})" title="แก้ไข">✏️</button>
         ${isSA ? `<button class="ib ib-d" onclick="quickDel(${p.id},'${p.name}')" title="ลบ">🗑️</button>` : ''}
       </div>`).join('')}
@@ -1131,7 +1143,7 @@ function openEditProduct(id) {
   document.getElementById('pf-title').textContent = '✏️ แก้ไขสินค้า';
   document.getElementById('pf-del').style.display = isSA ? 'inline-flex' : 'none';
   document.getElementById('pf-err').textContent = '';
-  document.getElementById('pf-body').innerHTML = pfFields(p, !isSA);
+  document.getElementById('pf-body').innerHTML = pfFields(p, false);
   open_('ov-pform');
 }
 
@@ -1634,10 +1646,21 @@ async function addUser() {
   }
 }
 
-function copyCredentials(username, password, url) {
+function copyCredentials(username, password, url, btn) {
   const text = `🔐 ข้อมูล Login ร้านข้าวสาร\n🌐 ${url}\n👤 Username: ${username}\n🔑 Password: ${password}`;
-  navigator.clipboard.writeText(text).then(() => toast('📋 คัดลอกแล้ว!')).catch(() => {
+  const doFeedback = () => {
+    toast('📋 คัดลอกแล้ว!');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✅ คัดลอกแล้ว!';
+      btn.style.background = '#2e7d32';
+      btn.disabled = true;
+      setTimeout(() => { btn.innerHTML = orig; btn.style.background = '#1976d2'; btn.disabled = false; }, 2500);
+    }
+  };
+  navigator.clipboard.writeText(text).then(doFeedback).catch(() => {
     prompt('คัดลอกข้อความนี้:', text);
+    doFeedback();
   });
 }
 
@@ -1690,7 +1713,7 @@ function showCredentialCard(username, password, role) {
         </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-        <button onclick="copyCredentials('${username}','${password}','${url}')" style="background:#1976d2;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">📋 คัดลอก</button>
+        <button onclick="copyCredentials('${username}','${password}','${url}',this)" style="background:#1976d2;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">📋 คัดลอก</button>
         <button onclick="saveCredentialImg()" style="background:#c2185b;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">💾 บันทึกรูป</button>
         <button onclick="document.getElementById('cred-overlay').remove()" style="background:#555;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">✕ ปิด</button>
       </div>

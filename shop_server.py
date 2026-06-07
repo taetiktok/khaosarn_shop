@@ -236,6 +236,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200); self._cors(); self.end_headers()
 
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html')
+        self._cors()
+        self.end_headers()
+
     def do_GET(self):
         if IS_CLOUD and self.headers.get('X-Forwarded-Proto','https') == 'http':
             self.send_response(301)
@@ -244,6 +250,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         p = self.path.split('?')[0]
         {'/': self._html, '/index.html': self._html,
          '/api/products': self._get_products, '/api/me': self._get_me,
+         '/api/resolve-tiktok': self._resolve_tiktok,
          '/api/audit': self._get_audit, '/api/users': self._get_users,
          '/api/settings': self._get_settings}.get(p, lambda: (
             self._serve_upload(p) if p.startswith('/uploads/') else
@@ -361,7 +368,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _add_product(self):
         u = self._user()
         if not u: self._json({'error':'กรุณาเข้าสู่ระบบ'},401); return
-        if u['role'] != 'superadmin': self._json({'error':'ไม่มีสิทธิ์'},403); return
         try:
             d = self._body(); name = d.get('name','').strip(); price = float(d.get('price',0))
             if not name or price <= 0: raise ValueError
@@ -387,16 +393,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not ex: self._json({'error':'ไม่พบสินค้า'},404); return
             now = _now()
             ex = dict(ex)
-            if u['role'] == 'superadmin':
-                db.execute(
-                    "UPDATE products SET name=?,cat=?,price=?,unit=?,desc_text=?,emoji=?,img_url=?,img_pos=?,price_bulk=?,bulk_qty=?,updated_at=? WHERE id=?",
-                    (d.get('name',ex['name']),d.get('cat',ex['cat']),float(d.get('price',ex['price'])),
-                     d.get('unit',ex['unit']),d.get('desc_text',ex['desc_text']),d.get('emoji',ex['emoji']),
-                     d.get('img_url',ex['img_url']),d.get('img_pos',ex.get('img_pos','50% 50%')),
-                     float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0),now,pid))
-            else:
-                np=float(d.get('price',ex['price'])); nd=d.get('desc_text',ex['desc_text'])
-                db.execute("UPDATE products SET price=?,desc_text=?,updated_at=? WHERE id=?", (np,nd,now,pid))
+            db.execute(
+                "UPDATE products SET name=?,cat=?,price=?,unit=?,desc_text=?,emoji=?,img_url=?,img_pos=?,price_bulk=?,bulk_qty=?,updated_at=? WHERE id=?",
+                (d.get('name',ex['name']),d.get('cat',ex['cat']),float(d.get('price',ex['price'])),
+                 d.get('unit',ex['unit']),d.get('desc_text',ex['desc_text']),d.get('emoji',ex['emoji']),
+                 d.get('img_url',ex['img_url']),d.get('img_pos',ex.get('img_pos','50% 50%')),
+                 float(d.get('price_bulk',0) or 0),int(d.get('bulk_qty',0) or 0),now,pid))
             db.commit()
         _audit(u['id'],u['username'],'UPDATE_PRODUCT',f"#{pid}",self._ip()); self._json({'ok':True})
 
@@ -535,19 +537,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _reset_all_stock(self):
         u = self._user()
-        if not u or u['role'] != 'superadmin': self._json({'error':'ไม่มีสิทธิ์'},403); return
+        if not u: self._json({'error':'กรุณาเข้าสู่ระบบ'},401); return
         with _db_lock, get_db() as db: db.execute("UPDATE products SET in_stock=1"); db.commit()
         _audit(u['id'],u['username'],'RESET_STOCK','รีเซ็ตเปิดขายทั้งหมด',self._ip()); self._json({'ok':True})
 
     def _reset_all_visible(self):
         u = self._user()
-        if not u or u['role'] != 'superadmin': self._json({'error':'ไม่มีสิทธิ์'},403); return
+        if not u: self._json({'error':'กรุณาเข้าสู่ระบบ'},401); return
         with _db_lock, get_db() as db: db.execute("UPDATE products SET visible=1"); db.commit()
         _audit(u['id'],u['username'],'RESET_VISIBLE','แสดงทั้งหมด',self._ip()); self._json({'ok':True})
 
     def _toggle_stock(self, pid):
         u = self._user()
-        if not u or u['role'] != 'superadmin': self._json({'error':'ไม่มีสิทธิ์'},403); return
+        if not u: self._json({'error':'กรุณาเข้าสู่ระบบ'},401); return
         with _db_lock, get_db() as db:
             r = db.execute("SELECT in_stock,name FROM products WHERE id=?", (pid,)).fetchone()
             if not r: self._json({'error':'ไม่พบสินค้า'},404); return
@@ -558,7 +560,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _toggle_visible(self, pid):
         u = self._user()
-        if not u or u['role'] != 'superadmin': self._json({'error':'ไม่มีสิทธิ์'},403); return
+        if not u: self._json({'error':'กรุณาเข้าสู่ระบบ'},401); return
         with _db_lock, get_db() as db:
             r = db.execute("SELECT COALESCE(visible,1) as visible,name FROM products WHERE id=?", (pid,)).fetchone()
             if not r: self._json({'error':'ไม่พบสินค้า'},404); return
@@ -569,7 +571,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _toggle_featured(self, pid):
         u = self._user()
-        if not u or u['role'] != 'superadmin': self._json({'error':'ไม่มีสิทธิ์'},403); return
+        if not u: self._json({'error':'กรุณาเข้าสู่ระบบ'},401); return
         with _db_lock, get_db() as db:
             r = db.execute("SELECT COALESCE(featured,0) as featured,name FROM products WHERE id=?", (pid,)).fetchone()
             if not r: self._json({'error':'ไม่พบสินค้า'},404); return
@@ -615,6 +617,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute("DELETE FROM reset_tokens WHERE token=?", (tok,))
             db.execute("DELETE FROM sessions WHERE user_id=?", (uid,)); db.commit()
         _audit(uid,'(reset)','RESET_PW','รีเซ็ตรหัสผ่านผ่านอีเมล',self._ip()); self._json({'ok':True})
+
+    def _resolve_tiktok(self):
+        raw = self.path.split('?url=')[-1] if '?url=' in self.path else ''
+        if not raw:
+            try: raw = self._body().get('url','')
+            except: pass
+        if not raw: self._json({'error':'no url'},400); return
+        try:
+            req = urllib.request.Request(unquote(raw), headers={"User-Agent":"Mozilla/5.0"})
+            resp = urllib.request.urlopen(req, timeout=10)
+            final = resp.url
+            m = re.search(r'/video/(\d+)', final)
+            if m: self._json({'video_id': m.group(1), 'url': final})
+            else: self._json({'error':'ไม่พบ video ID ใน URL นี้'}, 400)
+        except Exception as e: self._json({'error': str(e)}, 500)
 
     def _proxy(self):
         raw = unquote(self.path[len('/proxy?url='):])
