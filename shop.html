@@ -2871,8 +2871,11 @@ function sendOrderViaLine() {
   msg += `${'─'.repeat(24)}\n💰 รวม ฿${Number(subtotal).toLocaleString()} (${items.reduce((s,x)=>s+x.qty,0)} รายการ)\n📦 กรุณาแจ้งที่อยู่จัดส่งด้วยนะคะ 🙏`;
   const lineId = (storeSettings.line_id || LINE).trim();
   // line.me/R/ti/p/@OA_ID works for both OA and personal; don't encode @ in path
-  // oaMessage supports pre-filled text; keep @ raw (don't encodeURIComponent the ID)
-  window.open(`https://line.me/R/oaMessage/${lineIdPath}/?text=${encodeURIComponent(msg)}`, '_blank');
+  // OA (@xxx) → oaMessage, personal ID → msg/text (opens LINE share picker with pre-filled text)
+  const lineUrl = lineIdPath.startsWith('@')
+    ? `https://line.me/R/oaMessage/${lineIdPath}/?text=${encodeURIComponent(msg)}`
+    : `https://line.me/R/msg/text/?${encodeURIComponent(msg)}`;
+  window.open(lineUrl, '_blank');
 }
 
 init();
